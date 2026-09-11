@@ -17,6 +17,8 @@ int commandline::set_solver_type(string to_parse)
 		solverType = LINEAR_SOFT ;
 	else if (to_parse == "LINEAR_BOUNDED")
 		solverType = LINEAR_BOUNDED ;
+	else if (to_parse == "PTVRP")
+		solverType = BELLMAN_PTVRP ;
 	else
 		return -1; // problem
 
