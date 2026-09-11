@@ -28,7 +28,11 @@ using namespace std ;
 //                   function of the segment's cumulative demand, which breaks the constant-offset dominance
 //                   property the O(n) linear Split relies on (see Split_Bellman_PTVRP.cpp) -- only a
 //                   Bellman-style O(nB) DP is used for this solver type.
-enum SolverType {BELLMAN, BELLMAN_SOFT, BELLMAN_BOUNDED, LINEAR, LINEAR_SOFT, LINEAR_BOUNDED, BELLMAN_PTVRP};
+// LINEAR_PTVRP --> deliberately UNSOUND control: Vidal's O(n) deque applied to the PT-VRP cost anyway.
+//                  The dominance test is left exactly as it is in Split_Linear, so it compares
+//                  predecessors by their fixed cost while ignoring the trip multiplier that actually
+//                  scales that cost. It exists to measure what the shortcut costs, not to be used.
+enum SolverType {BELLMAN, BELLMAN_SOFT, BELLMAN_BOUNDED, LINEAR, LINEAR_SOFT, LINEAR_BOUNDED, BELLMAN_PTVRP, LINEAR_PTVRP};
 
 // Service time incurred at a vendor on each visit, in the same time units as the horizon.
 // PT-VRP defines tau(sigma) as the travel time of one trip plus the service time of every vendor
@@ -192,9 +196,12 @@ void printSolutionPTVRP()
 
 // Method to test a PT-VRP solution : recomputes d(sigma), tau(sigma), m(sigma) per template from
 // scratch and checks the total cost and every template's duration feasibility against horizon.
-void checkSolutionPTVRP()
+// strict=false reports violations instead of throwing, for the unsound LINEAR_PTVRP control whose
+// whole purpose is to be measured when it returns something infeasible. Returns the violation count.
+int checkSolutionPTVRP(bool strict = true)
 {
 	double costTotal = 0 ;
+	int violations = 0 ;
 	for (int i = 0 ; i < solutionNbRoutes ; i++)
 	{
 		int begin = solution[i] ;
@@ -217,16 +224,23 @@ void checkSolutionPTVRP()
 
 		if (time * m > horizon + 0.0001)
 		{
+			violations ++ ;
 			cout << "ERROR : template " << i << " violates the horizon constraint ("
 				 << time * m << " > " << horizon << ")" << endl ;
-			throw string("ERROR : template violates the horizon constraint");
+			if (strict)
+				throw string("ERROR : template violates the horizon constraint");
 		}
 
 		costTotal += dist * m ;
 	}
 
 	if (costTotal > solutionCost + 0.0001 || costTotal < solutionCost - 0.0001)
+	{
+		violations ++ ;
 		cout << "ERROR : Solution checker does not find the same solution cost" << endl ;
+	}
+
+	return violations ;
 }
 
 // Constructor
