@@ -221,8 +221,9 @@ void checkSolutionPTVRP()
 		cout << "ERROR : Solution checker does not find the same solution cost" << endl ;
 }
 
-// Constructor
-Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double penaltyLoad);
+// Constructor. serviceTime < 0 means "use whatever the instance file provides (0 if it provides
+// nothing)"; serviceTime >= 0 applies that value uniformly to every vendor, overriding the file.
+Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double penaltyLoad, double serviceTime = -1);
 
 ~Pb_Data(void);
 };

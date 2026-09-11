@@ -11,7 +11,7 @@
 
 #include "Pb_Data.h"
 
-Pb_Data::Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double penaltyLoad) : pathToInstance(pathToInstance), solverType(solverType), nbVehicles(nbVeh), penaltyLoad(penaltyLoad)
+Pb_Data::Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double penaltyLoad, double serviceTime) : pathToInstance(pathToInstance), solverType(solverType), nbVehicles(nbVeh), penaltyLoad(penaltyLoad)
 {
 	// For now it's hard coded, but should be a variable of the problem or a commandline input
 	ifstream fichier ;
@@ -103,6 +103,8 @@ Pb_Data::Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double
 			else
 				cli[i].dnext = -1 ;
 			cli[i].service = hasService ? atof(tok[pos++].c_str()) : 0.0 ;
+			if (serviceTime >= 0)
+				cli[i].service = serviceTime ; // uniform override from the commandline
 		}
 
 		// little debugging test

@@ -26,6 +26,10 @@ class commandline
 		// unit penalty per amount off capacity excess, only necessary for problems with soft capacity constraints
 		double penaltyLoad ;
 
+		// uniform service time applied to every vendor (PT-VRP). Negative means "not specified on the
+		// commandline", in which case the instance file's own service column is used, or 0 if it has none.
+		double serviceTime ;
+
 		// set the name of the instance
         void set_instance_name(string to_parse);
 
@@ -54,6 +58,9 @@ class commandline
 
 		// get the load penalty
 		double get_penaltyLoad();
+
+		// get the uniform service time (negative if not specified)
+		double get_serviceTime();
 
 		// is the commandline valid ?
         bool is_valid();
