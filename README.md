@@ -97,6 +97,30 @@ diagnostics when the layered solver is used, and `gap_vs_first` when several sol
 given. Instances the horizon makes infeasible are written as `NO SOLUTION` rather than
 skipped. `--timeout` bounds any single run; repeat `--dir` for several folders.
 
+## Skewing the load along the tour
+
+`skew_instances.py` rewrites only the demand column, keeping the geometry, the tour order, the
+capacity, the horizon and the **total** demand fixed, so `ceil(q_tot/Q)` does not move and only the
+position of the load along the chromosome changes.
+
+```bash
+python3 skew_instances.py --src "Instances/Instances 1" --out Instances/skew --limit 60
+python3 batch_run.py --dir Instances/skew/right --solver PTVRP_LAYERED --out right.csv
+```
+
+Profiles are Beta shapes over tour position: `flat`, `left`, `right`, `centre`, `ends`.
+
+This exists because `eff_K` is a *local* average, not a function of global mean demand:
+`eff_K = (1/n) sum_j K(j)` with `K(j)` driven by the mean demand inside the horizon-feasible window
+ending at `j`. Since `K` is concave in that local mean, redistributing load at fixed total can only
+lower `eff_K` -- and because early windows are truncated by the start of the chromosome rather than
+by the horizon, the effect is asymmetric: loading the tail lowers `eff_K` (0.84x at high capacity,
+0.73x at low), loading the head does not.
+
+Note that skewing at low capacity removes feasibility from many instances, since concentrated load
+makes `tau*m` exceed the horizon locally. Raise `MAX_ROUTE` if you need both large multipliers and a
+full instance set.
+
 ## Instances
 
 - `Instances/*.gt` — the original Vidal files.
