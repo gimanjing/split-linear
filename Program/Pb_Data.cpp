@@ -34,6 +34,7 @@ Pb_Data::Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double
 
 		nbNodes = -1 ;
 		vehCapacity = -1 ;
+		trace = false ;
 		speed = 1.0 ;      // absent SPEED : distances double as travel times
 		horizon = 1.e30 ;  // absent MAX_ROUTE/HORIZON : no duration limit
 

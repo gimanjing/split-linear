@@ -83,6 +83,9 @@ double speed ;
 // PT-VRP only : time horizon T_H that the duration of a template (over all its executions) must respect
 double horizon ;
 
+// PT-VRP only : print the DP's internal steps, for studying the algorithms on small instances
+bool trace ;
+
 // vector of clients, i.e., locations to be visited in the TSP
 vector < Client > cli ;
 

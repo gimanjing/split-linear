@@ -26,6 +26,9 @@ class commandline
 		// unit penalty per amount off capacity excess, only necessary for problems with soft capacity constraints
 		double penaltyLoad ;
 
+		// print the DP's internal steps (PT-VRP solvers only) -- for learning, not for large instances
+		bool trace ;
+
 		// set the name of the instance
         void set_instance_name(string to_parse);
 
@@ -54,6 +57,9 @@ class commandline
 
 		// get the load penalty
 		double get_penaltyLoad();
+
+		// should the solver print its internal steps ?
+		bool get_trace();
 
 		// is the commandline valid ?
         bool is_valid();

@@ -74,6 +74,10 @@ int Split_Layered_PTVRP::solve()
 	// the Bellman solver uses to stop its inner loop.
 	int firstFeasible = 0 ;
 
+	if (myData->trace)
+		cout << endl << "=== LAYERED : one deque per trip count, layers partition the starts ===" << endl
+			 << "    inside a layer m is constant, so k*d(i,j) = k*A[i] + k*B[j] separates again" << endl ;
+
 	for (int j = 1 ; j <= n ; j++)
 	{
 		while (firstFeasible < j
@@ -86,6 +90,10 @@ int Split_Layered_PTVRP::solve()
 		// loop far below ceil(total demand / Q) whenever the horizon binds before the load does.
 		int columnK = trips(firstFeasible, j) ;
 		int kHi = (PTVRP_MAX_K > 0 && PTVRP_MAX_K < columnK) ? PTVRP_MAX_K : columnK ;
+
+		if (myData->trace)
+			cout << endl << "  +-- p[" << j << "] : feasible starts begin at " << firstFeasible
+				 << ", layers 1.." << kHi << endl ;
 
 		if (kHi + 1 > (int) queues.size())
 		{
@@ -149,6 +157,14 @@ int Split_Layered_PTVRP::solve()
 
 			int front = dq.front() ;
 			double cand = key(front, k) + (double) k * B[j] ;
+			if (myData->trace)
+			{
+				cout << "  |  layer k=" << k << " : starts [" << lower << "," << upper << ")  deque [ " ;
+				for (size_t q = 0 ; q < dq.size() ; q++) cout << dq[q] << " " ;
+				cout << "]  front=" << front
+					 << "   cand = p[" << front << "] + " << k << "*d(" << front << "," << j << ")"
+					 << " = " << cand << ((cand < potential[j]) ? "   <- best so far" : "") << endl ;
+			}
 			if (cand < potential[j])
 			{
 				potential[j] = cand ;
@@ -158,6 +174,10 @@ int Split_Layered_PTVRP::solve()
 			}
 		}
 	}
+
+	if (myData->trace)
+		cout << endl << "  layer iterations : " << layerIterations
+			 << "   <- this is the n*K work, versus n*B for Bellman" << endl ;
 
 	// THE CORE OF THE SPLIT ALGORITHM IS FINISHED HERE,
 	// NOW JUST SWEEPING THE ROUTE in O(n) TO REPORT THE SOLUTION (IN THE GOOD DIRECTION)

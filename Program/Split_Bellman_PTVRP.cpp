@@ -44,6 +44,10 @@ int Split_Bellman_PTVRP::solve()
 	}
 	potential[0] = 0 ;
 
+	// trace lines are collected per endpoint so the printout reads in DP order (all candidates for
+	// p[1], then all for p[2] ...) rather than in the loop's start-outer order
+	vector < vector<string> > traceByJ (myData->nbNodes+1) ;
+
 	// Split algorithm here
 	for (int i = 0 ; i < myData->nbNodes ; i++)
 	{
@@ -73,6 +77,16 @@ int Split_Bellman_PTVRP::solve()
 				break ; // infeasible from here on -- see the early-stop note above
 
 			double cost = d_ij * m ;
+			if (myData->trace)
+			{
+				ostringstream os ;
+				os << "  |  start=" << i << " : template(" << i+1 << ".." << j << ")"
+				   << "  d=" << d_ij << "  q=" << load << "  m=" << m << "  cost=" << d_ij << "*" << m
+				   << "=" << cost << "   ->  p[" << i << "]=" << potential[i] << " + " << cost
+				   << " = " << potential[i] + cost
+				   << ((potential[i] + cost < potential[j]) ? "   <- best so far" : "") ;
+				traceByJ[j].push_back(os.str()) ;
+			}
 			if (potential[i] + cost < potential[j])
 			{
 				potential[j] = potential[i] + cost ;
@@ -82,6 +96,22 @@ int Split_Bellman_PTVRP::solve()
 				predM[j] = m ;
 			}
 		}
+	}
+
+	if (myData->trace)
+	{
+		cout << endl << "=== BELLMAN : every candidate start, evaluated for every endpoint ===" << endl ;
+		for (int j = 1 ; j <= myData->nbNodes ; j++)
+		{
+			cout << endl << "  +-- p[" << j << "] : cheapest way to serve vendors 1.." << j << endl ;
+			for (size_t t = 0 ; t < traceByJ[j].size() ; t++)
+				cout << traceByJ[j][t] << endl ;
+			cout << "  +-- p[" << j << "] = " << potential[j] << "  (predecessor " << pred[j] << ")" << endl ;
+		}
+		cout << endl << "  candidates evaluated : " ;
+		int tot = 0 ;
+		for (int j = 1 ; j <= myData->nbNodes ; j++) tot += (int) traceByJ[j].size() ;
+		cout << tot << "   <- this is the n*B work" << endl ;
 	}
 
 	// THE CORE OF THE SPLIT ALGORITHM IS FINISHED HERE,

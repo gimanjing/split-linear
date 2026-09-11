@@ -64,6 +64,7 @@ commandline::commandline(int argc, char* argv[])
 		display_problem_name(string(argv[1]));
 		nbVeh = -1 ;
 		penaltyLoad = 1.e30 ;
+		trace = false ;
 
 		// parameters
 		for ( int i = 2 ; i < argc ; i += 2 )
@@ -84,6 +85,10 @@ commandline::commandline(int argc, char* argv[])
 			{
 				penaltyLoad = atof(argv[i+1]);
 				cout << "PENALTY LOAD : " << penaltyLoad << endl ;
+			}
+			else if ( string(argv[i]) == "-trace" )
+			{
+				trace = (atoi(argv[i+1]) != 0) ;
 			}
 			else
 			{
@@ -134,6 +139,11 @@ int commandline::get_nbVeh()
 double commandline::get_penaltyLoad()
 {
 	return penaltyLoad ;
+}
+
+bool commandline::get_trace()
+{
+	return trace ;
 }
 
 bool commandline::is_valid()

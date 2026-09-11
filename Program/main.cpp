@@ -31,6 +31,7 @@ int main (int argc, char *argv[])
 	{
 		// Parsing the problem instance
 		myData = new Pb_Data(c.get_path_to_instance(),c.get_solver_type(),c.get_nbVeh(),c.get_penaltyLoad());
+		myData->trace = c.get_trace();
 
 		// Begin of clock
 		myData->time_StartComput = clock();

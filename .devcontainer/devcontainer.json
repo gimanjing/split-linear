@@ -1,0 +1,10 @@
+{
+  "name": "split-linear (C++)",
+  "image": "mcr.microsoft.com/devcontainers/cpp:debian-12",
+  "postCreateCommand": "cd Program && make",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-vscode.cpptools"]
+    }
+  }
+}
