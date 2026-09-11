@@ -1,10 +1,15 @@
 {
   "name": "split-linear (C++)",
   "image": "mcr.microsoft.com/devcontainers/cpp:debian-12",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    }
+  },
   "postCreateCommand": "cd Program && make",
   "customizations": {
     "vscode": {
-      "extensions": ["ms-vscode.cpptools"]
+      "extensions": ["ms-vscode.cpptools", "ms-python.python"]
     }
   }
 }

@@ -76,6 +76,27 @@ Vidal's `B`. The two move in opposite directions as capacity changes, because a 
 the horizon on length or on trips but not both, and their product is bounded by `T_H` over the mean
 per-vendor travel time.
 
+## Batch runs
+
+`batch_run.py` runs the solvers over many instances and writes one CSV row per
+(instance, solver), for opening in a spreadsheet. It needs the binary built first.
+
+```bash
+# one solver over a whole folder
+python3 batch_run.py --dir "Instances/Instances 1" --solver PTVRP --out results.csv
+
+# compare solvers on the same instances; adds a gap_vs_first column
+python3 batch_run.py --dir "Instances/Instances 3" --solver PTVRP PTVRP_LAYERED --out cmp.csv
+
+# sample 20 rather than all 1050, for a quick look
+python3 batch_run.py --dir "Instances/Instances 2" --solver PTVRP --limit 20 --out quick.csv
+```
+
+Columns: instance, n, Q, horizon, solver, cost, templates, max_m, seconds, the layer
+diagnostics when the layered solver is used, and `gap_vs_first` when several solvers are
+given. Instances the horizon makes infeasible are written as `NO SOLUTION` rather than
+skipped. `--timeout` bounds any single run; repeat `--dir` for several folders.
+
 ## Instances
 
 - `Instances/*.gt` — the original Vidal files.
