@@ -18,6 +18,7 @@
 #include "Split_Linear_Bounded.h"
 #include "Split_Bellman_PTVRP.h"
 #include "Split_Linear_PTVRP.h"
+#include "Split_Layered_PTVRP.h"
 #include <iostream>
 
 int main (int argc, char *argv[])
@@ -30,6 +31,7 @@ int main (int argc, char *argv[])
 	{
 		// Parsing the problem instance
 		myData = new Pb_Data(c.get_path_to_instance(),c.get_solver_type(),c.get_nbVeh(),c.get_penaltyLoad());
+		myData->trace = c.get_trace();
 
 		// Begin of clock
 		myData->time_StartComput = clock();
@@ -51,6 +53,8 @@ int main (int argc, char *argv[])
 			mySolver = new Split_Bellman_PTVRP(myData);
 		else if (myData->solverType == LINEAR_PTVRP)
 			mySolver = new Split_Linear_PTVRP(myData);
+		else if (myData->solverType == LAYERED_PTVRP)
+			mySolver = new Split_Layered_PTVRP(myData);
 		else
 		{
 			cout << "ERROR : no solver with this name" << endl ;
@@ -64,7 +68,8 @@ int main (int argc, char *argv[])
 		myData->time_EndComput = clock() ;
 
 		// Check and Print the solution
-		if (myData->solverType == BELLMAN_PTVRP || myData->solverType == LINEAR_PTVRP)
+		if (myData->solverType == BELLMAN_PTVRP || myData->solverType == LINEAR_PTVRP
+		    || myData->solverType == LAYERED_PTVRP)
 		{
 			myData->printSolutionPTVRP() ;
 			// the unsound control is allowed to return an infeasible partition : report, do not throw

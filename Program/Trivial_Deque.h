@@ -58,6 +58,12 @@ public:
 		return myDeque[indexBack] ;
 	}
 
+	// k-th element counting from the front; used only to print the queue while tracing
+	inline int get_front_at (int k)
+	{
+		return myDeque[indexFront + k] ;
+	}
+
 	// returns the current number of elements in the queue
 	inline int size ()
 	{

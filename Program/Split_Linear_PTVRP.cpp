@@ -29,6 +29,10 @@ int Split_Linear_PTVRP::solve()
 
 	Trivial_Deque queue = Trivial_Deque(myData->nbNodes+1, 0) ;
 
+	if (myData->trace)
+		cout << endl << "=== DEQUE (UNSOUND) : one front is trusted for every endpoint ===" << endl
+			 << "    the queue ranks predecessors by fixed cost only, with no knowledge of m" << endl ;
+
 	// Main loop -- structurally identical to Split_Linear
 	for (int i = 1 ; i <= myData->nbNodes ; i++)
 	{
@@ -37,6 +41,30 @@ int Split_Linear_PTVRP::solve()
 		// multiplier ignored, so the front need not be the best predecessor here at all.
 		potential[i] = propagate(queue.get_front(), i) ;
 		pred[i] = queue.get_front() ;
+
+		if (myData->trace)
+		{
+			cout << endl << "  +-- p[" << i << "] : queue holds [ " ;
+			for (int q = 0 ; q < queue.size() ; q++) cout << queue.get_front_at(q) << " " ;
+			cout << "]  front=" << queue.get_front() << endl ;
+			int f = queue.get_front() ;
+			cout << "  |  front=" << f << " : d=" << tripDistance(f,i) << "  m=" << trips(f,i)
+				 << "  cost=" << tripDistance(f,i) << "*" << trips(f,i)
+				 << "   ->  p[" << i << "] = " << potential[i] << endl ;
+			// what an exhaustive scan would have found, to expose the committed error
+			double best = 1.e30 ; int bestI = -1 ;
+			for (int c = 0 ; c < i ; c++)
+			{
+				if (potential[c] > 1.e29) continue ;
+				if (exceedsHorizon(c, i)) continue ;
+				double v = potential[c] + tripDistance(c,i) * (double) trips(c,i) ;
+				if (v < best) { best = v ; bestI = c ; }
+			}
+			if (bestI >= 0 && best < potential[i] - 1.e-9)
+				cout << "  |  *** but start=" << bestI << " gives " << best
+					 << " -- the deque trusted the wrong front (off by "
+					 << potential[i] - best << ") ***" << endl ;
+		}
 
 		if (i < myData->nbNodes)
 		{

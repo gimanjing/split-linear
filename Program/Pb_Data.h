@@ -32,7 +32,7 @@ using namespace std ;
 //                  The dominance test is left exactly as it is in Split_Linear, so it compares
 //                  predecessors by their fixed cost while ignoring the trip multiplier that actually
 //                  scales that cost. It exists to measure what the shortcut costs, not to be used.
-enum SolverType {BELLMAN, BELLMAN_SOFT, BELLMAN_BOUNDED, LINEAR, LINEAR_SOFT, LINEAR_BOUNDED, BELLMAN_PTVRP, LINEAR_PTVRP};
+enum SolverType {BELLMAN, BELLMAN_SOFT, BELLMAN_BOUNDED, LINEAR, LINEAR_SOFT, LINEAR_BOUNDED, BELLMAN_PTVRP, LINEAR_PTVRP, LAYERED_PTVRP};
 
 // Service time incurred at a vendor on each visit, in the same time units as the horizon.
 // PT-VRP defines tau(sigma) as the travel time of one trip plus the service time of every vendor
@@ -82,6 +82,9 @@ double speed ;
 
 // PT-VRP only : time horizon T_H that the duration of a template (over all its executions) must respect
 double horizon ;
+
+// PT-VRP only : print the DP's internal steps, for studying the algorithms on small instances
+bool trace ;
 
 // vector of clients, i.e., locations to be visited in the TSP
 vector < Client > cli ;
