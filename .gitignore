@@ -1,3 +1,6 @@
 # Build artifacts
 Program/*.o
 Program/split
+
+# Batch run outputs -- regenerate with batch_run.py
+*.csv
