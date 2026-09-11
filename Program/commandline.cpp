@@ -46,10 +46,10 @@ commandline::commandline(int argc, char* argv[])
 	bool isOutput = false ;
 	bool isNameSpecified = false ;
 	
-	if (argc%2 != 0 || argc > 10 || argc < 2)
+	if (argc%2 != 0 || argc > 8 || argc < 2)
 	{
 		cout << "ERROR : invalid command line" << endl ;
-		cout << "USAGE : ./executable path_to_instance [-solver solver_type] [-veh nb_vehicles] [-pen penalty_factor] [-serv service_time]" << endl ;
+		cout << "USAGE : ./executable path_to_instance [-solver solver_type] [-veh nb_vehicles] [-pen penalty_factor]" << endl ;
 		throw string ("ERROR : invalid command line") ;
         command_ok = false;
 	}
@@ -60,7 +60,6 @@ commandline::commandline(int argc, char* argv[])
 		display_problem_name(string(argv[1]));
 		nbVeh = -1 ;
 		penaltyLoad = 1.e30 ;
-		serviceTime = -1 ; // not specified : fall back to the instance file, or 0 if it carries none
 
 		// parameters
 		for ( int i = 2 ; i < argc ; i += 2 )
@@ -81,11 +80,6 @@ commandline::commandline(int argc, char* argv[])
 			{
 				penaltyLoad = atof(argv[i+1]);
 				cout << "PENALTY LOAD : " << penaltyLoad << endl ;
-			}
-			else if ( string(argv[i]) == "-serv" )
-			{
-				serviceTime = atof(argv[i+1]);
-				cout << "SERVICE TIME : " << serviceTime << " (uniform, per vendor per visit)" << endl ;
 			}
 			else
 			{
@@ -136,11 +130,6 @@ int commandline::get_nbVeh()
 double commandline::get_penaltyLoad()
 {
 	return penaltyLoad ;
-}
-
-double commandline::get_serviceTime()
-{
-	return serviceTime ;
 }
 
 bool commandline::is_valid()

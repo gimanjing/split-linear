@@ -35,25 +35,25 @@ $(TARGETDIR)/main.o: main.cpp commandline.h Pb_Data.h Split.h \
 $(TARGETDIR)/Pb_Data.o: Pb_Data.h Pb_Data.cpp
 	$(CCC) $(CCFLAGS) $(CPPFLAGS) -c Pb_Data.cpp -o $(TARGETDIR)/Pb_Data.o
 
-$(TARGETDIR)/Split_Bellman.o: Split_Bellman.h Split_Bellman.cpp
+$(TARGETDIR)/Split_Bellman.o: Split_Bellman.h Split_Bellman.cpp Split.h Pb_Data.h Trivial_Deque.h
 	$(CCC) $(CCFLAGS) $(CPPFLAGS) -c Split_Bellman.cpp -o $(TARGETDIR)/Split_Bellman.o
 
-$(TARGETDIR)/Split_Bellman_Bounded.o: Split_Bellman_Bounded.h Split_Bellman_Bounded.cpp
+$(TARGETDIR)/Split_Bellman_Bounded.o: Split_Bellman_Bounded.h Split_Bellman_Bounded.cpp Split.h Pb_Data.h Trivial_Deque.h
 	$(CCC) $(CCFLAGS) $(CPPFLAGS) -c Split_Bellman_Bounded.cpp -o $(TARGETDIR)/Split_Bellman_Bounded.o
 
-$(TARGETDIR)/Split_Bellman_Soft.o: Split_Bellman_Soft.h Split_Bellman_Soft.cpp
+$(TARGETDIR)/Split_Bellman_Soft.o: Split_Bellman_Soft.h Split_Bellman_Soft.cpp Split.h Pb_Data.h Trivial_Deque.h
 	$(CCC) $(CCFLAGS) $(CPPFLAGS) -c Split_Bellman_Soft.cpp -o $(TARGETDIR)/Split_Bellman_Soft.o
 
-$(TARGETDIR)/Split_Linear.o: Split_Linear.h Split_Linear.cpp
+$(TARGETDIR)/Split_Linear.o: Split_Linear.h Split_Linear.cpp Split.h Pb_Data.h Trivial_Deque.h
 	$(CCC) $(CCFLAGS) $(CPPFLAGS) -c Split_Linear.cpp -o $(TARGETDIR)/Split_Linear.o
 
-$(TARGETDIR)/Split_Linear_Bounded.o: Split_Linear_Bounded.h Split_Linear_Bounded.cpp
+$(TARGETDIR)/Split_Linear_Bounded.o: Split_Linear_Bounded.h Split_Linear_Bounded.cpp Split.h Pb_Data.h Trivial_Deque.h
 	$(CCC) $(CCFLAGS) $(CPPFLAGS) -c Split_Linear_Bounded.cpp -o $(TARGETDIR)/Split_Linear_Bounded.o
 
-$(TARGETDIR)/Split_Linear_Soft.o: Split_Linear_Soft.h Split_Linear_Soft.cpp
+$(TARGETDIR)/Split_Linear_Soft.o: Split_Linear_Soft.h Split_Linear_Soft.cpp Split.h Pb_Data.h Trivial_Deque.h
 	$(CCC) $(CCFLAGS) $(CPPFLAGS) -c Split_Linear_Soft.cpp -o $(TARGETDIR)/Split_Linear_Soft.o
 
-$(TARGETDIR)/Split_Bellman_PTVRP.o: Split_Bellman_PTVRP.h Split_Bellman_PTVRP.cpp
+$(TARGETDIR)/Split_Bellman_PTVRP.o: Split_Bellman_PTVRP.h Split_Bellman_PTVRP.cpp Split.h Pb_Data.h Trivial_Deque.h
 	$(CCC) $(CCFLAGS) $(CPPFLAGS) -c Split_Bellman_PTVRP.cpp -o $(TARGETDIR)/Split_Bellman_PTVRP.o
 
 clean:

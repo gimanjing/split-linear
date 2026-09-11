@@ -28,7 +28,7 @@ int main (int argc, char *argv[])
 	if (c.is_valid())
 	{
 		// Parsing the problem instance
-		myData = new Pb_Data(c.get_path_to_instance(),c.get_solver_type(),c.get_nbVeh(),c.get_penaltyLoad(),c.get_serviceTime());
+		myData = new Pb_Data(c.get_path_to_instance(),c.get_solver_type(),c.get_nbVeh(),c.get_penaltyLoad());
 
 		// Begin of clock
 		myData->time_StartComput = clock();

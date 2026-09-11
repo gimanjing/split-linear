@@ -11,7 +11,7 @@
 
 #include "Pb_Data.h"
 
-Pb_Data::Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double penaltyLoad, double serviceTime) : pathToInstance(pathToInstance), solverType(solverType), nbVehicles(nbVeh), penaltyLoad(penaltyLoad)
+Pb_Data::Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double penaltyLoad) : pathToInstance(pathToInstance), solverType(solverType), nbVehicles(nbVeh), penaltyLoad(penaltyLoad)
 {
 	// For now it's hard coded, but should be a variable of the problem or a commandline input
 	ifstream fichier ;
@@ -73,20 +73,12 @@ Pb_Data::Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double
 			throw string ("ERROR when reading instance, missing DIMENSION or CAPACITY");
 		}
 
-		// Rows 1..n-1 carry nbCol values, the last row omits dnext, and one EOF token closes the file,
-		// so the token count after the section header is exactly nbNodes*nbCol. That identity tells us
-		// whether a service-time column is present without needing a flag in the header.
-		size_t rest = tok.size() - pos ;
-		int nbCol = (int) (rest / (size_t) nbNodes) ;
-		bool hasService = (nbCol >= 5) ;
-
 		// creating the data structure for clients
 		// to match the index of the auxiliary graph, the node 0 in the vector of Clients will be a sentinel (which can somehow stand for the depot)
 		cli = vector <Client> (nbNodes+1) ;
 		cli[0].demand = 0 ;
 		cli[0].dreturn = 0 ;
 		cli[0].dnext = 0 ;
-		cli[0].service = 0 ;
 		cli[0].index = 0 ;
 		for (int i = 1 ; i <= nbNodes ; i++)
 		{
@@ -102,9 +94,6 @@ Pb_Data::Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double
 				cli[i].dnext = atof(tok[pos++].c_str()) ;
 			else
 				cli[i].dnext = -1 ;
-			cli[i].service = hasService ? atof(tok[pos++].c_str()) : 0.0 ;
-			if (serviceTime >= 0)
-				cli[i].service = serviceTime ; // uniform override from the commandline
 		}
 
 		// little debugging test

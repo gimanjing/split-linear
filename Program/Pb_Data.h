@@ -30,13 +30,22 @@ using namespace std ;
 //                   Bellman-style O(nB) DP is used for this solver type.
 enum SolverType {BELLMAN, BELLMAN_SOFT, BELLMAN_BOUNDED, LINEAR, LINEAR_SOFT, LINEAR_BOUNDED, BELLMAN_PTVRP};
 
+// Service time incurred at a vendor on each visit, in the same time units as the horizon.
+// PT-VRP defines tau(sigma) as the travel time of one trip plus the service time of every vendor
+// visited, but none of the instance sets carry per-vendor service data, and the value is expected to
+// be the same across instances, so it is fixed here for every vendor rather than read from the file.
+// Change this single line to model a non-zero service time.
+// Scale note: on the Instances 1/2/3 sets (MAX_ROUTE = 86400, distances doubling as travel times)
+// any value below roughly 3600 leaves the optimum unchanged, and values above roughly 40000 make the
+// instances infeasible -- so the horizon only reacts to service times of that order.
+const double PTVRP_SERVICE_TIME = 0.0 ;
+
 struct Client
 {
 	int index ;
 	double demand ;
 	double dreturn ;
 	double dnext ;
-	double service ; // service time incurred at this vendor on each visit (PT-VRP only, 0 otherwise)
 };
 
 class Pb_Data
@@ -201,8 +210,7 @@ void checkSolutionPTVRP()
 			dist += cli[j].dnext ;
 			time += cli[j].dnext / speed ;
 		}
-		for (int j = begin ; j <= end ; j++)
-			time += cli[j].service ;
+		time += PTVRP_SERVICE_TIME * (end - begin + 1) ;
 
 		int m = (int) ceil(load / vehCapacity - 1.e-9) ;
 		if (m < 1) m = 1 ;
@@ -221,9 +229,8 @@ void checkSolutionPTVRP()
 		cout << "ERROR : Solution checker does not find the same solution cost" << endl ;
 }
 
-// Constructor. serviceTime < 0 means "use whatever the instance file provides (0 if it provides
-// nothing)"; serviceTime >= 0 applies that value uniformly to every vendor, overriding the file.
-Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double penaltyLoad, double serviceTime = -1);
+// Constructor
+Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double penaltyLoad);
 
 ~Pb_Data(void);
 };

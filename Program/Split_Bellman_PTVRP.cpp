@@ -61,7 +61,7 @@ int Split_Bellman_PTVRP::solve()
 				dist += myData->cli[j-1].dnext ;
 				time += myData->cli[j-1].dnext / myData->speed ;
 			}
-			time += myData->cli[j].service ;
+			time += PTVRP_SERVICE_TIME ;
 
 			double d_ij = dist + myData->cli[j].dreturn ;
 			double tau_ij = time + myData->cli[j].dreturn / myData->speed ;
