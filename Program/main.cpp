@@ -16,6 +16,7 @@
 #include "Split_Linear.h"
 #include "Split_Linear_Soft.h"
 #include "Split_Linear_Bounded.h"
+#include "Split_Bellman_PTVRP.h"
 #include <iostream>
 
 int main (int argc, char *argv[])
@@ -45,12 +46,14 @@ int main (int argc, char *argv[])
 			mySolver = new Split_Linear_Soft(myData);
 		else if (myData->solverType == LINEAR_BOUNDED)
 			mySolver = new Split_Linear_Bounded(myData);
+		else if (myData->solverType == BELLMAN_PTVRP)
+			mySolver = new Split_Bellman_PTVRP(myData);
 		else
 		{
 			cout << "ERROR : no solver with this name" << endl ;
 			throw string ("ERROR : no solver with this name") ;
 		}
-		
+
 		// Compute here the split solution
 		mySolver->solve() ;
 
@@ -58,8 +61,16 @@ int main (int argc, char *argv[])
 		myData->time_EndComput = clock() ;
 
 		// Check and Print the solution
-		myData->printSolution() ;
-		myData->checkSolution() ;
+		if (myData->solverType == BELLMAN_PTVRP)
+		{
+			myData->printSolutionPTVRP() ;
+			myData->checkSolutionPTVRP() ;
+		}
+		else
+		{
+			myData->printSolution() ;
+			myData->checkSolution() ;
+		}
 
 		// the time measure is not precise on a single instance
 		// to make more precise time measures, the code inside this function needs to be looped several times.

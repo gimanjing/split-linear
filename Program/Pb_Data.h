@@ -22,7 +22,13 @@ using namespace std ;
 // LINEAR --> Efficient O(n) approach for Split
 // LINEAR_SOFT --> Efficient O(n) approach, with possible penalized capacity excess
 // LINEAR_BOUNDED --> Efficient O(n) approach, with bounded fleet
-enum SolverType {BELLMAN, BELLMAN_SOFT, BELLMAN_BOUNDED, LINEAR, LINEAR_SOFT, LINEAR_BOUNDED};
+// BELLMAN_PTVRP --> Periodic-Template VRP: a template (route) is executed ceil(q(sigma)/Q) times over a
+//                   horizon T_H, so both cost and duration are multiplied by that trip count instead of
+//                   being bounded by a single-trip capacity check. This multiplier is a non-linear (step)
+//                   function of the segment's cumulative demand, which breaks the constant-offset dominance
+//                   property the O(n) linear Split relies on (see Split_Bellman_PTVRP.cpp) -- only a
+//                   Bellman-style O(nB) DP is used for this solver type.
+enum SolverType {BELLMAN, BELLMAN_SOFT, BELLMAN_BOUNDED, LINEAR, LINEAR_SOFT, LINEAR_BOUNDED, BELLMAN_PTVRP};
 
 struct Client
 {
@@ -30,6 +36,7 @@ struct Client
 	double demand ;
 	double dreturn ;
 	double dnext ;
+	double service ; // service time incurred at this vendor on each visit (PT-VRP only, 0 otherwise)
 };
 
 class Pb_Data
@@ -57,6 +64,12 @@ int nbVehicles ;
 // penalty coefficient for one unit of load excess (for problems with soft capacity constraint)
 double penaltyLoad ;
 
+// PT-VRP only : speed used to derive travel time from distance (time = distance / speed)
+double speed ;
+
+// PT-VRP only : time horizon T_H that the duration of a template (over all its executions) must respect
+double horizon ;
+
 // vector of clients, i.e., locations to be visited in the TSP
 vector < Client > cli ;
 
@@ -76,6 +89,17 @@ double solutionCost ;
 
 // number of routes in the solution
 int solutionNbRoutes ;
+
+/* PT-VRP ONLY : per-template reporting, filled by Split_Bellman_PTVRP, indexed like solution[] */
+
+// d(sigma) : one-trip distance of each template
+vector < double > solutionTemplateDist ;
+
+// tau(sigma) : one-trip duration (travel + service) of each template
+vector < double > solutionTemplateTime ;
+
+// m(sigma) = ceil(q(sigma)/Q) : number of executions of each template
+vector < int > solutionTemplateTrips ;
 
 /* METHODS TO TEST AND EXPORT THE FINAL SOLUTION */
 
@@ -131,6 +155,67 @@ void checkSolution()
 
 	//cout << "Cost reported by the Split algorithm : " << solutionCost << endl ;
 	//cout << "Cost evaluated by the solution checker : " << costTotal << endl ;
+
+	if (costTotal > solutionCost + 0.0001 || costTotal < solutionCost - 0.0001)
+		cout << "ERROR : Solution checker does not find the same solution cost" << endl ;
+}
+
+// Method to display a PT-VRP solution (templates, trip counts, per-template distance/duration)
+void printSolutionPTVRP()
+{
+	cout << endl ;
+	cout << "------------------------------------" << endl ;
+	cout << "SOLUTION COST : " << std::setprecision(12) << solutionCost << endl ;
+	cout << "NB TEMPLATES : " << solutionNbRoutes << endl ;
+	for (int i = 0 ; i < solutionNbRoutes ; i++)
+	{
+		int begin = solution[i] ;
+		int end = (i < solutionNbRoutes-1) ? solution[i+1]-1 : nbNodes ;
+		cout << "TEMPLATE " << i << " : vendors [" << begin << ".." << end << "]"
+			 << "  d(sigma)=" << solutionTemplateDist[i]
+			 << "  tau(sigma)=" << solutionTemplateTime[i]
+			 << "  m(sigma)=" << solutionTemplateTrips[i]
+			 << "  cost=" << solutionTemplateDist[i] * solutionTemplateTrips[i] << endl ;
+	}
+	cout << "------------------------------------" << endl ;
+	cout << endl ;
+}
+
+// Method to test a PT-VRP solution : recomputes d(sigma), tau(sigma), m(sigma) per template from
+// scratch and checks the total cost and every template's duration feasibility against horizon.
+void checkSolutionPTVRP()
+{
+	double costTotal = 0 ;
+	for (int i = 0 ; i < solutionNbRoutes ; i++)
+	{
+		int begin = solution[i] ;
+		int end = (i < solutionNbRoutes-1) ? solution[i+1]-1 : nbNodes ;
+
+		double load = 0, dist = 0, time = 0 ;
+		for (int j = begin ; j <= end ; j++)
+			load += cli[j].demand ;
+		dist = cli[begin].dreturn + cli[end].dreturn ;
+		time = cli[begin].dreturn / speed + cli[end].dreturn / speed ;
+		for (int j = begin ; j < end ; j++)
+		{
+			dist += cli[j].dnext ;
+			time += cli[j].dnext / speed ;
+		}
+		for (int j = begin ; j <= end ; j++)
+			time += cli[j].service ;
+
+		int m = (int) ceil(load / vehCapacity - 1.e-9) ;
+		if (m < 1) m = 1 ;
+
+		if (time * m > horizon + 0.0001)
+		{
+			cout << "ERROR : template " << i << " violates the horizon constraint ("
+				 << time * m << " > " << horizon << ")" << endl ;
+			throw string("ERROR : template violates the horizon constraint");
+		}
+
+		costTotal += dist * m ;
+	}
 
 	if (costTotal > solutionCost + 0.0001 || costTotal < solutionCost - 0.0001)
 		cout << "ERROR : Solution checker does not find the same solution cost" << endl ;

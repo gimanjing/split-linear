@@ -17,7 +17,8 @@ OBJS2 = \
         $(TARGETDIR)/Split_Bellman_Soft.o \
         $(TARGETDIR)/Split_Linear.o \
         $(TARGETDIR)/Split_Linear_Bounded.o \
-        $(TARGETDIR)/Split_Linear_Soft.o
+        $(TARGETDIR)/Split_Linear_Soft.o \
+        $(TARGETDIR)/Split_Bellman_PTVRP.o
 
 $(TARGETDIR)/split: $(OBJS2)
 	$(CCC)  $(CCFLAGS) -o $(TARGETDIR)/split $(OBJS2)
@@ -49,6 +50,9 @@ $(TARGETDIR)/Split_Linear_Bounded.o: Split_Linear_Bounded.h Split_Linear_Bounded
 $(TARGETDIR)/Split_Linear_Soft.o: Split_Linear_Soft.h Split_Linear_Soft.cpp
 	$(CCC) $(CCFLAGS) $(CPPFLAGS) -c Split_Linear_Soft.cpp -o $(TARGETDIR)/Split_Linear_Soft.o
 
+$(TARGETDIR)/Split_Bellman_PTVRP.o: Split_Bellman_PTVRP.h Split_Bellman_PTVRP.cpp
+	$(CCC) $(CCFLAGS) $(CPPFLAGS) -c Split_Bellman_PTVRP.cpp -o $(TARGETDIR)/Split_Bellman_PTVRP.o
+
 clean:
 	 $(RM) \
 	 $(TARGETDIR)/split \
@@ -60,5 +64,6 @@ clean:
      $(TARGETDIR)/Split_Bellman_Soft.o \
      $(TARGETDIR)/Split_Linear.o \
      $(TARGETDIR)/Split_Linear_Bounded.o \
-     $(TARGETDIR)/Split_Linear_Soft.o
+     $(TARGETDIR)/Split_Linear_Soft.o \
+     $(TARGETDIR)/Split_Bellman_PTVRP.o
 

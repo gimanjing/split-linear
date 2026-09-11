@@ -36,6 +36,21 @@ Pb_Data::Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double
 		fichier >>  uselessStr ;
 		fichier >>  vehCapacity ;
 		getline(fichier, contenu);
+
+		// PT-VRP instances carry two extra header lines : SPEED (converts distance to travel time)
+		// and HORIZON (T_H, the max duration of a template over all its executions)
+		if (solverType == BELLMAN_PTVRP)
+		{
+			fichier >>  uselessStr ;
+			fichier >>  uselessStr ;
+			fichier >>  speed ;
+			getline(fichier, contenu);
+			fichier >>  uselessStr ;
+			fichier >>  uselessStr ;
+			fichier >>  horizon ;
+			getline(fichier, contenu);
+		}
+
 		getline(fichier, contenu);
 
 		// creating the data structure for clients
@@ -44,6 +59,7 @@ Pb_Data::Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double
 		cli[0].demand = 0 ;
 		cli[0].dreturn = 0 ;
 		cli[0].dnext = 0 ;
+		cli[0].service = 0 ;
 		cli[0].index = 0 ;
 		for (int i = 1 ; i <= nbNodes ; i++)
 		{
@@ -54,6 +70,10 @@ Pb_Data::Pb_Data(string pathToInstance, SolverType solverType, int nbVeh, double
 				fichier >> cli[i].dnext ;
 			else
 				cli[i].dnext = -1 ;
+			if (solverType == BELLMAN_PTVRP)
+				fichier >> cli[i].service ;
+			else
+				cli[i].service = 0 ;
 		}
 
 		// little debugging test
