@@ -73,12 +73,16 @@ public:
 	// Largest layer appearing on the final path (equals the largest m(sigma) in the solution)
 	int maxLayerOnPath ;
 
+	// Total (column, layer) pairs the loop executed : this, divided by n, is the K that actually
+	// drives the O(n*K) cost -- not the largest layer that happened to improve a label
+	long layerIterations ;
+
 	// Count of positions where the monotonicity the two-pointer windows assume does not hold
 	int monotonicityViolations ;
 
 	Split_Layered_PTVRP(Pb_Data * myData) : Split(myData),
 		layersFullTour(0), layersAllocated(0), maxLayerUsed(0), maxLayerOnPath(0),
-		monotonicityViolations(0) {}
+		layerIterations(0), monotonicityViolations(0) {}
 
 	int solve();
 };

@@ -66,6 +66,7 @@ int Split_Layered_PTVRP::solve()
 
 	maxLayerUsed = 0 ;
 	layersAllocated = 0 ;
+	layerIterations = 0 ;
 
 	// Frontier of feasibility : the first start whose template to j fits the horizon at all. Both
 	// tau(i,j) and m(i,j) grow as the template is extended backwards, so their product does too and the
@@ -98,6 +99,8 @@ int Split_Layered_PTVRP::solve()
 
 		for (int k = 1 ; k <= kHi ; k++)
 		{
+			layerIterations ++ ;
+
 			// starts needing exactly k trips : [firstLoadLE[k], firstLoadLE[k-1]), with j closing k = 1
 			while (firstLoadLE[k] < j && trips(firstLoadLE[k], j) > k)
 				firstLoadLE[k] ++ ;
@@ -199,6 +202,8 @@ int Split_Layered_PTVRP::solve()
 		 << "   (after the horizon bound" << (PTVRP_MAX_K > 0 ? " and MAX_K cap" : "") << ")" << endl ;
 	cout << "MAX LAYER USED       : " << maxLayerUsed << "   (largest k that improved any label)" << endl ;
 	cout << "MAX LAYER ON PATH    : " << maxLayerOnPath << "   (largest m(sigma) in the solution)" << endl ;
+	cout << "LAYER ITERATIONS     : " << layerIterations << "   (the work actually done; effective K = "
+		 << (double) layerIterations / (double) n << " per column)" << endl ;
 	if (monotonicityViolations > 0)
 		cout << "WARNING : " << monotonicityViolations
 			 << " positions break the monotonicity the sliding windows assume (rounded distances)" << endl ;
