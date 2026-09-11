@@ -21,6 +21,8 @@ int commandline::set_solver_type(string to_parse)
 		solverType = BELLMAN_PTVRP ;
 	else if (to_parse == "PTVRP_LINEAR")
 		solverType = LINEAR_PTVRP ;
+	else if (to_parse == "PTVRP_LAYERED")
+		solverType = LAYERED_PTVRP ;
 	else
 		return -1; // problem
 
