@@ -1,0 +1,3 @@
+# Build artifacts
+Program/*.o
+Program/split
