@@ -104,22 +104,40 @@ capacity, the horizon and the **total** demand fixed, so `ceil(q_tot/Q)` does no
 position of the load along the chromosome changes.
 
 ```bash
-python3 skew_instances.py --src "Instances/Instances 1" --out Instances/skew --limit 60
-python3 batch_run.py --dir Instances/skew/right --solver PTVRP_LAYERED --out right.csv
+# the full matrix: 5 centroids x 4 concentrations
+python3 skew_instances.py --src "Instances/Instances 1" --out Instances/skew --limit 40 \
+    --mu 0.1 0.3 0.5 0.7 0.9 --conc 2 4 10 30
+
+# a fine sweep where the effect actually lives
+python3 skew_instances.py --src "Instances/Instances 1" --out Instances/skew \
+    --mu 0.5 0.6 0.7 0.8 0.9 0.95 --conc 4
+python3 batch_run.py --dir Instances/skew/mu0.9_s4 --solver PTVRP_LAYERED --out tail.csv
 ```
 
-Profiles are Beta shapes over tour position: `flat`, `left`, `right`, `centre`, `ends`.
+Skew is a two-factor design rather than a set of named cases, so `eff_K` can be regressed on it:
 
-This exists because `eff_K` is a *local* average, not a function of global mean demand:
-`eff_K = (1/n) sum_j K(j)` with `K(j)` driven by the mean demand inside the horizon-feasible window
-ending at `j`. Since `K` is concave in that local mean, redistributing load at fixed total can only
-lower `eff_K` -- and because early windows are truncated by the start of the chromosome rather than
-by the horizon, the effect is asymmetric: loading the tail lowers `eff_K` (0.84x at high capacity,
-0.73x at low), loading the head does not.
+- `--mu` — demand centroid along the tour, `sum(i*q_i)/(n*sum q_i)`. 0.5 balanced, >0.5 tail-loaded.
+- `--conc` — concentration `s`; larger piles the load more tightly around `mu`. `s=2, mu=0.5` is flat.
 
-Note that skewing at low capacity removes feasibility from many instances, since concentrated load
-makes `tau*m` exceed the horizon locally. Raise `MAX_ROUTE` if you need both large multipliers and a
-full instance set.
+`manifest.csv` logs the *measured* centroid, Gini and CV of every generated file. Regress on those,
+not on the knob: the positivity floor pulls the extremes inward, so `mu=0.9` lands near centroid 0.88.
+
+Measured over a 5x4 matrix (21 instances feasible in every cell), median `eff_K` relative to flat:
+
+| | mu=0.1 | mu=0.3 | mu=0.5 | mu=0.7 | mu=0.9 |
+|---|---|---|---|---|---|
+| s=2  | 0.86 | 0.98 | 1.00 | 0.84 | 0.64 |
+| s=30 | 0.93 | 1.07 | 1.10 | 0.93 | 0.68 |
+
+Position is the whole effect and it is monotone from 0.5 rightward; tail-loading at `mu=0.9` removes
+36% of `eff_K`. Concentration barely registers -- every column moves by at most 0.06 across a 15x
+range of `s` -- so unevenness alone is not the mechanism, position is. Note the two factors are not
+orthogonal at the extremes: `mu=0.1` already carries Gini 0.75 at `s=2`, since a Beta peaked at an
+edge is inherently concentrated.
+
+Skewing at low capacity removes feasibility from many instances, since concentrated load makes
+`tau*m` exceed the horizon locally. Raise `MAX_ROUTE` if you need both large multipliers and a full
+instance set.
 
 ## Instances
 

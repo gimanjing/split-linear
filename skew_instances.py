@@ -1,27 +1,48 @@
 #!/usr/bin/env python3
 """Rewrite instance demands along the giant-tour order, keeping geometry and total load fixed.
 
-Only the demand column changes. Coordinates, the tour order, the depot legs, the capacity and the
-horizon are all left alone, and the total demand is rescaled back to the original, so ceil(q_tot/Q)
--- the naive layer count -- is unchanged. What changes is only *where along the chromosome* the load
-sits, which is what the eff_K model predicts should matter.
+Only the demand column changes. Coordinates, tour order, depot legs, capacity and horizon are left
+alone and the total demand is rescaled back to the original, so ceil(q_tot/Q) -- the naive layer
+count -- does not move. Only *where along the chromosome* the load sits changes.
 
-Profiles are Beta shapes over normalised tour position x = (i-0.5)/n, w_i propto x^(a-1) (1-x)^(b-1):
+Skew is a two-factor design rather than a set of named cases, so eff_K can be regressed on it:
 
-  flat      a=1   b=1     the reference (matches the original instance up to rounding)
-  left      a=1   b=3     load concentrated at the start of the tour
-  right     a=3   b=1     load concentrated at the end
-  centre    a=3   b=3     load concentrated in the middle
-  ends      a=0.5 b=0.5   load at both ends, light middle
+  mu    demand centroid, sum(i*q_i)/(n*sum q_i) in [0,1].  0.5 balanced, <0.5 head-loaded,
+        >0.5 tail-loaded. This is the axis the eff_K asymmetry lives on.
+  s     concentration. Larger s piles the load more tightly around mu; s=2 with mu=0.5 is
+        the flat reference.
+
+Weights are Beta over normalised tour position, a = mu*s and b = (1-mu)*s, so the two factors move
+independently. Every generated file is logged with its *measured* centroid, Gini and coefficient of
+variation -- the nominal knob and the achieved statistic are not the same thing once the positivity
+floor and the integer rounding bite, and the achieved one is what belongs on the x-axis.
 
 Usage:
-  python3 skew_instances.py --src "Instances/Instances 3" --out Instances/skew --limit 30
-  python3 batch_run.py --dir Instances/skew/right --solver PTVRP_LAYERED --out right.csv
-"""
-import argparse, math, os, random, re, sys
+  # full matrix, 5 positions x 4 concentrations
+  python3 skew_instances.py --src "Instances/Instances 1" --out Instances/skew --limit 40 \
+      --mu 0.1 0.3 0.5 0.7 0.9 --conc 2 4 10 30
 
-PROFILES = {"flat": (1.0, 1.0), "left": (1.0, 3.0), "right": (3.0, 1.0),
-            "centre": (3.0, 3.0), "ends": (0.5, 0.5)}
+  # one cell
+  python3 skew_instances.py --src "Instances/Instances 1" --out Instances/skew --mu 0.9 --conc 10
+
+Each cell lands in <out>/mu<mu>_s<s>/ and <out>/manifest.csv records the achieved statistics.
+"""
+import argparse, csv, math, os, random, sys
+
+def cell_name(mu, s):
+    return f"mu{mu:g}_s{s:g}"
+
+
+def stats(dem):
+    """Measured centroid, Gini and CV of a demand vector laid out in tour order."""
+    n = len(dem); tot = sum(dem)
+    centroid = sum((i + 0.5) * q for i, q in enumerate(dem)) / (n * tot) if tot else 0.0
+    srt = sorted(dem)
+    gini = (2.0 * sum((i + 1) * q for i, q in enumerate(srt)) / (n * tot) - (n + 1.0) / n) if tot else 0.0
+    mean = tot / n
+    var = sum((q - mean) ** 2 for q in dem) / n
+    cv = (var ** 0.5) / mean if mean else 0.0
+    return centroid, gini, cv
 
 
 def parse(path):
@@ -92,11 +113,13 @@ def write(path, hdr, n, dem, dret, dnext, name):
 def main():
     ap = argparse.ArgumentParser(description="Skew instance demands along the giant-tour order.")
     ap.add_argument("--src", required=True, help="source instance folder")
-    ap.add_argument("--out", required=True, help="output root; one subfolder per profile")
+    ap.add_argument("--out", required=True, help="output root; one subfolder per (mu, s) cell")
     ap.add_argument("--limit", type=int, help="use only this many source instances")
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--profiles", nargs="+", default=list(PROFILES),
-                    help=f"subset of {list(PROFILES)}")
+    ap.add_argument("--mu", nargs="+", type=float, default=[0.1, 0.3, 0.5, 0.7, 0.9],
+                    help="target demand centroids in (0,1); 0.5 is balanced")
+    ap.add_argument("--conc", nargs="+", type=float, default=[2, 4, 10, 30],
+                    help="concentrations s = a+b; s=2 at mu=0.5 is the flat reference")
     args = ap.parse_args()
 
     import glob
@@ -106,20 +129,40 @@ def main():
         files = sorted(files[:args.limit])
     if not files:
         sys.exit(f"no .gt files under {args.src}")
+    for mu in args.mu:
+        if not 0.0 < mu < 1.0:
+            sys.exit(f"--mu must lie strictly inside (0,1), got {mu}")
 
-    for prof in args.profiles:
-        os.makedirs(os.path.join(args.out, prof), exist_ok=True)
+    cells = [(mu, s) for s in args.conc for mu in args.mu]
+    for mu, s in cells:
+        os.makedirs(os.path.join(args.out, cell_name(mu, s)), exist_ok=True)
+
+    os.makedirs(args.out, exist_ok=True)
+    man = open(os.path.join(args.out, "manifest.csv"), "w", newline="")
+    mw = csv.writer(man)
+    mw.writerow(["cell", "mu_target", "s", "instance", "n",
+                 "centroid_measured", "gini_measured", "cv_measured",
+                 "centroid_source", "gini_source", "total_demand_error"])
+
     written = 0
     for src in files:
         hdr, n, dem, dret, dnext = parse(src)
         base = os.path.basename(src)
-        for prof in args.profiles:
-            a, b = PROFILES[prof]
+        c0, g0, _ = stats(dem)
+        for mu, s in cells:
+            a, b = mu * s, (1.0 - mu) * s
             newdem = reweight(dem, a, b)
-            dst = os.path.join(args.out, prof, base)
-            write(dst, hdr, n, newdem, dret, dnext, f"{base[:-3]}_{prof}")
+            cell = cell_name(mu, s)
+            write(os.path.join(args.out, cell, base), hdr, n, newdem, dret, dnext,
+                  f"{base[:-3]}_{cell}")
+            c, g, cv = stats(newdem)
+            mw.writerow([cell, mu, s, base, n, round(c, 5), round(g, 5), round(cv, 5),
+                         round(c0, 5), round(g0, 5),
+                         round(abs(sum(newdem) - sum(dem)) / max(1.0, sum(dem)), 9)])
             written += 1
-    print(f"{len(files)} source instances x {len(args.profiles)} profiles -> {written} files under {args.out}")
+    man.close()
+    print(f"{len(files)} instances x {len(cells)} cells -> {written} files under {args.out}")
+    print(f"achieved statistics per file logged in {os.path.join(args.out, 'manifest.csv')}")
 
 
 if __name__ == "__main__":
