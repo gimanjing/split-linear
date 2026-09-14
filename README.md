@@ -5,6 +5,9 @@ Vidal's Split library, extended with the Periodic-Template VRP (PT-VRP), where a
 executed `m(sigma) = ceil(q(sigma)/Q)` times over a horizon, so its cost is `d(sigma)*m(sigma)` and
 its duration `tau(sigma)*m(sigma)` must fit `T_H`.
 
+**`NOTES.md`** is the research write-up: why Vidal's linear Split does not apply here, what
+replaces it, the full measurements, the lines of attack that failed, and what is still open.
+
 ## Running it
 
 In a Codespace everything is built on create. Otherwise:
@@ -122,18 +125,23 @@ Skew is a two-factor design rather than a set of named cases, so `eff_K` can be 
 `manifest.csv` logs the *measured* centroid, Gini and CV of every generated file. Regress on those,
 not on the knob: the positivity floor pulls the extremes inward, so `mu=0.9` lands near centroid 0.88.
 
-Measured over a 5x4 matrix (21 instances feasible in every cell), median `eff_K` relative to flat:
+Measured over a 5x4 matrix (34 of 40 instances feasible in every cell), median `eff_K` relative to
+the flat reference `mu=0.5, s=2`, **restricted to the 23 instances with `eff_K > 1` at the
+reference** -- the others sit on the floor and cannot respond:
 
 | | mu=0.1 | mu=0.3 | mu=0.5 | mu=0.7 | mu=0.9 |
 |---|---|---|---|---|---|
-| s=2  | 0.86 | 0.98 | 1.00 | 0.84 | 0.64 |
-| s=30 | 0.93 | 1.07 | 1.10 | 0.93 | 0.68 |
+| s=2  | 1.20 | 1.15 | 1.00 | 0.82 | 0.57 |
+| s=30 | 1.25 | 1.18 | 1.05 | 0.82 | 0.62 |
 
-Position is the whole effect and it is monotone from 0.5 rightward; tail-loading at `mu=0.9` removes
-36% of `eff_K`. Concentration barely registers -- every column moves by at most 0.06 across a 15x
-range of `s` -- so unevenness alone is not the mechanism, position is. Note the two factors are not
-orthogonal at the extremes: `mu=0.1` already carries Gini 0.75 at `s=2`, since a Beta peaked at an
-edge is inherently concentrated.
+Position is the effect and it is monotone and **two-sided**: tail-loading at `mu=0.9` removes ~40% of
+`eff_K`, head-loading at `mu=0.1` adds ~20-25%. Concentration is a weak second-order effect -- at most
+0.07 across a 15x range of `s` -- and its sign is not uniform, amplifying the head-load penalty and
+damping the tail-load benefit. Note the two factors are not orthogonal at the extremes: a Beta peaked
+at an edge is inherently concentrated.
+
+Filter before reading these numbers. Including the instances pinned at `eff_K = 1` drags every
+median toward 1.00 and hides the head-loading half of the effect entirely -- see `NOTES.md` §10.1.
 
 Skewing at low capacity removes feasibility from many instances, since concentrated load makes
 `tau*m` exceed the horizon locally. Raise `MAX_ROUTE` if you need both large multipliers and a full
