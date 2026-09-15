@@ -372,6 +372,70 @@ Findings:
 4. Skewing at low capacity removes feasibility from many instances, since concentrated load makes
    `tau·m` exceed the horizon locally.
 
+### 5.7 What the layering actually restores: the mixed second difference
+
+The cleanest statement of both the obstruction and the repair is through the discrete mixed second
+difference, for `i < i'` and `j < j'`:
+
+```
+Delta(i,i'; j,j')  =  c(i,j) + c(i',j')  -  c(i,j')  -  c(i',j)
+```
+
+Three conditions on a cost matrix, in strictly decreasing order of strength:
+
+| condition | requirement on `Delta` | what it buys |
+|---|---|---|
+| separable, `c = A[i] + B[j]` | `= 0` everywhere | permanent discarding; a monotone deque, `O(n)` |
+| Monge | `<= 0` everywhere | argmin monotone in `j`; SMAWK / LARSCH |
+| totally monotone | weaker still | SMAWK |
+
+The first two are related by an equivalence that is easy to miss: **a matrix is separable if and
+only if `Delta` vanishes on every 2x2 submatrix.** Forward is one line of algebra; backward, set
+`A[i] = c(i,j0) - c(i0,j0)` and `B[j] = c(i0,j)`, and the vanishing condition reconstructs
+`c(i,j) = A[i] + B[j]`. So "every submatrix is Monge with equality" and "separable" are the same
+property under two names. Separability sits *on the boundary* of the Monge cone, not inside it.
+
+This settles what Vidal's result rests on. His cost is separable by construction -- the depot legs
+attach entirely to one endpoint each and the interior cost is a difference of prefix sums -- so
+`Delta == 0` identically, and Property 2 is that fact restated. The deque with permanent discarding
+is available *because the boundary case is attained*. The machinery of Aggarwal, Schieber and
+Tokuyama addresses the strictly larger class `Delta <= 0`, which contains matrices such as
+`c(i,j) = -i*j` that admit no separation at all. Separability implies Monge; Monge does not imply
+separability, and the implication does not run backwards (§10.5).
+
+**Under the multiplicative objective, `Delta` neither vanishes nor keeps a fixed sign.** Write
+`g(i,j) = A[i] + B[j] >= 0` and `l(i,j) = L[j] - L[i]`. Because `l` is *modular* --
+`l(i,j) + l(i',j') = l(i,j') + l(i',j)` exactly -- a function `f(l)` is Monge iff `f` is convex, and
+`m = max(1, ceil(l/Q))` is a staircase, not convex. Two realisable configurations, both on strictly
+increasing loads at `Q = 10`:
+
+| configuration | loads `L[i], L[i'], L[j], L[j']` | `m` at `(i,j),(i,j'),(i',j),(i',j')` | `Delta` |
+|---|---|---|---|
+| step at the near corner | 0, 5, 15, 20 | 2, 2, 1, 2 | `+g(i',j) > 0` |
+| step at the far corner | 0, 4, 8, 12 | 1, 2, 1, 1 | `-g(i,j') < 0` |
+
+The sign changes within a single instance. The PT-VRP cost matrix therefore lies in **neither** the
+Monge nor the inverse-Monge cone, and the `max(1, .)` floor does not rescue it. A random scan over
+200,000 load/cost profiles satisfying `At` non-increasing, `Bt` non-decreasing and `g >= 0` finds
+violations of both directions in bulk (`monge_witness.py`, §9).
+
+**What layering does, precisely.** It does not weaken the requirement to Monge and then apply weaker
+machinery. It partitions the predecessor set until `Delta == 0` holds exactly on each part -- the
+original, strongest property, restored piecewise. Within layer `k` the cost is `k*A[i] + k*B[j]` and
+`Delta == 0` identically; the moving window does not break this, because if `(i,j')` and `(i',j)`
+both lie in layer `k`'s band then `lo(j) <= lo(j') <= i` and `i' < hi(j) <= hi(j')`, so all four
+corners are finite. The right description of the decoder is **separability restoration**, not a
+Monge technique.
+
+**Two gaps, stated rather than hidden.**
+
+- Total monotonicity is *weaker* than Monge, so "not Monge" does not formally imply "not totally
+  monotone". Ruling out TM specifically has not been done. §8.3 is probably closed; it is not
+  provably closed until it is.
+- The two witnesses are constructed on the abstract matrix under the monotonicity constraints of
+  §3.3. Whether such `A`/`B` values arise from an actual point set and tour order is unverified. A
+  referee will ask. The fix is cheap: scan the existing instances for a real sign-changing 4-tuple.
+
 ---
 
 ## 6. A line of attack that did not survive contact
@@ -437,23 +501,85 @@ objective, gives 2-opt final/start cost **0.477 → 0.501**. Clustered demand ma
 
 ## 7. Open questions
 
-1. **Is the PT-VRP cost matrix Monge within a layer?** This is the load-bearing question for §8.3.
-   Within layer `k` the cost is `k·A[i] + k·B[j]`, which is trivially Monge; the difficulty is that
-   the *layer membership boundary* moves with `j`, so the effective matrix over all predecessors is
-   a patchwork. Whether the patchwork is totally monotone is not established either way.
+1. **Is the PT-VRP cost matrix Monge within a layer? -- Resolved, see §5.7.** Within a layer the
+   cost is separable, which is the *boundary case* `Delta == 0` of the Monge condition rather than a
+   weaker consequence of it, and the moving window does not break it. The full matrix is neither
+   Monge nor inverse-Monge, since `Delta` takes both signs within one instance. What remains open is
+   narrower: **is the full matrix totally monotone?** TM is weaker than Monge, so the
+   counterexamples do not settle it, and it is the last door left for §8.3. Also unverified: whether
+   the witness 4-tuples are realisable from actual geometry rather than only from the abstract
+   monotonicity constraints of §3.3.
 2. **Is there a tighter a priori bound on `K` than the horizon frontier?** `K_allocated` (median 27)
    already improves on `ceil(q_tot/Q)` (median 287) by ~10×, but `eff_K` (median 15) and
    `max_layer_used` (median 9) show there is more slack. A bound computable before the sweep would
    let layers be allocated once rather than grown.
-3. **Does the crossover at `Q ≈ 100` move under a different horizon?** `B·K ≈ T_H/c` says the
-   trade-off is governed by `T_H/c`, so a shorter horizon should move the crossover. Untested —
-   every instance here has `T_H = 86400`.
-4. **Does the monotonicity violation ever matter?** Zero effect in 2,829 instances is strong evidence
-   but not a proof. A constructed adversarial instance would settle whether the counter is a genuine
-   safety net or permanently decorative.
+3. **Does the crossover at `Q ≈ 100` move under a different horizon? -- The §5.4 algebra says no.**
+   Solving `B·K ≈ T_H/c` together with `K/B = rho = qbar/Q` gives `K ≈ sqrt(rho·T_H/c)` and
+   `B ≈ sqrt(T_H/(c·rho))`: both grow as `sqrt(T_H)`, so the *ratio* `B/K = Q/qbar` carries no `T_H`
+   at all. With per-unit implementation constants `alpha` (Bellman, per predecessor scanned) and
+   `beta` (layered, per layer visited), the crossover condition `alpha·B = beta·K` gives
+
+   ```
+       Q* = qbar · (beta / alpha)          independent of T_H
+   ```
+
+   The horizon is a budget spent on the *product* `tau·m`; stretching it inflates `B` and `K` by the
+   same factor and leaves the race unchanged. **Prediction: rerunning §5.5 at `T_H = 43,200` and
+   `T_H = 172,800` leaves `Q*` near 100 while both timing columns scale as `sqrt(2)`.** Untested —
+   every instance here has `T_H = 86,400`. This is the cheapest available test of §5.4 on a
+   dimension it was not fitted to, and it supersedes the earlier guess in this slot that a shorter
+   horizon *should* move the crossover (§10.6).
+4. **Does the monotonicity violation ever matter -- and on which pointer?** Narrowed. The decoder
+   maintains two pointer families and only one is at risk. `firstLoadLE[k]`
+   (`Split_Layered_PTVRP.cpp:113`) advances on `trips(i,j)`, which is load-based; since `L[]` is
+   strictly increasing that pointer is monotone **unconditionally** and rounding cannot touch it, so
+   the layer partition is always safe. `firstTimeLE[k]` (`:123`) advances on
+   `At[i] > T_H/k - Bt[j]`, and *that* is what needs `At` non-increasing and `Bt` non-decreasing --
+   it is also what the counter at `:51` measures. The question is therefore only ever about the
+   **horizon-feasibility frontier**, and the failure is two-sided: a feasible start skipped, or an
+   infeasible one admitted. Both are confined to starts within one rounding unit of `tau·m = T_H`,
+   which makes an adversarial construction much easier than §3.3 implies -- place a template exactly
+   on the horizon boundary and perturb one arc by the rounding slack. Zero effect in 2,829 instances
+   remains strong evidence but not a proof.
 5. **Does any of this survive inside HGS?** Every result here is on a static giant tour. Split inside
    HGS is called on tours that are themselves evolving, and the distribution of those tours is not
-   the distribution of TSPLIB orders.
+   the distribution of TSPLIB orders. Two separable halves, neither attempted. **(a)** Does the
+   demand centroid stay near 0.5 under OX/PMX crossover, which is position-based and demand-blind?
+   If so, §5.6 and §5.5 carry over unchanged. **(b)** Split is called 10^5-10^6 times on tours
+   differing by a few moves, so reuse *across calls* becomes a lever with no analogue in the static
+   setting (§8.3). A third issue is unspecified anywhere: how a horizon-infeasible tour is reported
+   to a penalty-based fitness, given that 321 instances are genuinely infeasible and §5.2 shows the
+   deque never detects infeasibility at all.
+
+### Status ledger (2026-09-14)
+
+A snapshot of what is settled and what is not, so the distinction survives the next gap in work.
+"Settled" means the argument has been made and checked here; it does not mean peer-reviewed.
+
+**Settled**
+
+| claim | evidence | caveat |
+|---|---|---|
+| Within a layer the cost is separable; Property 2 holds | algebraic | the moving window does not break it — all four corners stay finite (§5.7) |
+| separable `<=>` `Delta == 0` on every 2x2 | both directions shown | classical; §10.5 rests on it |
+| `separable => Monge`, and not conversely | counterexample `c = -i*j` | the implication direction was the error in §10.5 |
+| The full matrix is neither Monge nor inverse-Monge | 2 closed-form witnesses + 200k random scan | witnesses are abstract, not yet exhibited on real geometry |
+| Vidal's deque needs separability, not Monge | §5.7 | three unrelated senses of "monotonicity" are in play — see §7.4 |
+| Layer partition is rounding-safe; only the horizon frontier is at risk | read from the source | `firstLoadLE` vs `firstTimeLE` (§7.4) |
+| §7.2 asks for a *bound*; §5.4 supplies an *estimate* | — | reframe only, no new result |
+| `Q* = qbar·(beta/alpha)`, horizon-free | algebraic, from §5.4 | a prediction; untested (§7.3) |
+
+**Open**
+
+| question | state | what is missing |
+|---|---|---|
+| Is the full matrix totally monotone? | open | TM is weaker than Monge, so §5.7 does not settle it. Last door for §8.3 |
+| Are the §5.7 witnesses geometrically realisable? | open | scan the existing instances for a real sign-changing 4-tuple |
+| A priori bound on `K` (§7.2) | open | reframed, not answered; no candidate beyond what `K_allocated` already computes |
+| Does the crossover move with `T_H` (§7.3)? | prediction only | the two-horizon rerun |
+| Does a rounding violation ever matter (§7.4)? | narrowed, unanswered | an adversarial instance on the horizon boundary |
+| Survival inside HGS (§7.5) | untouched | centroid stability; cross-call reuse; infeasibility reporting |
+| Realisable fraction of §8.1 | open | unchanged — unknown until implemented |
 
 ---
 
@@ -481,19 +607,29 @@ Moving from column `j` to `j+1` shifts the layer boundaries by one vendor's dema
 currently rebuilt per column; it should be slid. This is the same amortised-pointer argument Vidal
 uses inside a single deque, applied across layers. Constant factor, more intricate than §8.1.
 
-### 8.3 Monge / K-link path machinery — research, could change the exponent
+### 8.3 Monge / K-link path machinery — closed, pending one check
 
-The only item here that is not a constant. There is a body of work on shortest paths in DAGs whose
-cost matrices are Monge or totally monotone, including the *K-link path* problem, which is close to
-what layering produces. Aggarwal, Schieber and Tokuyama is the reference, and **Vidal cites it in
-his own conclusion** as the direction he did not take.
+**Superseded by §5.7.** This was the only item that could change the exponent rather than the
+constant, and the proof attempt §7.1 asked for has been made and came back negative. The reasoning
+is worth keeping. The machinery of Aggarwal, Schieber and Tokuyama — including the *K-link path*
+problem, which Vidal cites in his own conclusion as the direction he did not take — applies to
+matrices with `Delta <= 0`. The PT-VRP matrix has `Delta` of both signs within a single instance, so
+there is no weaker structural property to fall back on once separability is lost.
 
-If the answer to open question 7.1 is yes, that machinery can beat a linear scan per layer and lower
-the exponent rather than shaving the constant. If the answer is no, this line closes. It is the only
-item that can fail outright, so it wants a proof attempt before any code.
+The deeper reason this line was never as promising as it looked: layering is not a way of exploiting
+Monge structure, it is a way of *restoring separability* on a partition, which is the strictly
+stronger property. Having restored it, there is nothing further for SMAWK or LARSCH to extract — a
+separable matrix is Monge with equality, degenerate, and a linear scan per layer is already optimal
+on it.
 
-**Recommended order: 8.1 now** (contained, measurable, verifiable), 8.2 if another constant is wanted,
-8.3 as a separate question with a proof in front of it.
+The one remaining door is **total monotonicity**, which is weaker than Monge and therefore not
+excluded by the counterexamples. If anyone reopens this line, that is the proof to attempt, and it
+should still be attempted before any code.
+
+**Recommended order: 8.1 now** (contained, measurable, verifiable), 8.2 if another constant is
+wanted. With the exponent line closed, the remaining upside is entirely in how *few* layers are
+touched (§8.1, §8.2) and — newly — in reuse across Split calls inside HGS (§7.5b), which has no
+analogue in the static benchmark and is not yet a numbered item anywhere.
 
 ### 8.4 Repository debt
 
@@ -526,6 +662,9 @@ python3 skew_instances.py --src "Instances/Instances 1" --out Instances/skew --l
     --mu 0.1 0.3 0.5 0.7 0.9 --conc 2 4 10 30
 python3 batch_run.py $(for d in Instances/skew/mu*; do echo -n "--dir $d "; done) \
     --solver PTVRP_LAYERED --out skew_results.csv
+
+# the counterexamples behind §5.7 : both QI directions, hand-built + 200k random scan
+python3 monge_witness.py
 ```
 
 ---
@@ -553,3 +692,22 @@ bound now reported as `K_allocated`.
 which subset is taken — median over all instances is 1.67× (startup-dominated at small `n`), median
 over `n >= 3,000` is 18.28×, mean over all is 6.21×. §5.5 states the subset explicitly. Small-`n`
 timings should not be quoted at all at these run lengths.
+
+**10.5 "Separability comes from the Monge property."** Backwards, and worth keeping because the
+reconciliation is the useful part. The implications run `separable => Monge => totally monotone`,
+one direction only: `c(i,j) = -i*j` is Monge and admits no decomposition `A[i] + B[j]`. The
+intuition behind the error — that Vidal's matrix is built out of Monge submatrices — is *correct*,
+but circular without announcing itself, because those submatrices are Monge **with equality**, and
+"`Delta` vanishes on every 2x2" is precisely the definition of separable. There is nothing hidden
+inside the Monge structure to be found by inspecting the node arithmetic; at equality the Monge
+structure *is* the separability. Consequence for the write-up: "separability comes from Monge" is
+safe only if "Monge" means the equality case, in which case it is a tautology, and a reader who
+takes "Monge" in the SMAWK sense (`Delta <= 0`) will read it as false. State the condition on
+`Delta` and the ambiguity disappears. See §5.7.
+
+**10.6 "A shorter horizon should move the crossover."** Stated in §7.3 as a consequence of
+`B·K ≈ T_H/c`, and contradicted by that same relation once it is solved rather than quoted: `B` and
+`K` both scale as `sqrt(T_H)`, so the ratio deciding the race is horizon-free and
+`Q* = qbar·(beta/alpha)`. The general lesson: a relation on a *product* constrains the two factors
+jointly but says nothing about their ratio, and it is the ratio the crossover depends on. Corrected
+in §7.3; still untested.
