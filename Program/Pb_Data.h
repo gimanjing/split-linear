@@ -32,9 +32,11 @@ using namespace std ;
 //                  The dominance test is left exactly as it is in Split_Linear, so it compares
 //                  predecessors by their fixed cost while ignoring the trip multiplier that actually
 //                  scales that cost. It exists to measure what the shortcut costs, not to be used.
+// LAYERED_PTVRP_CONT --> LAYERED_PTVRP without the horizon pruning, O(n^2 K). Keeps the layer
+//                        partition (load-based, always exact) and drops the two one-way time pointers.
 // BELLMAN_PTVRP_CONT --> BELLMAN_PTVRP without the early stop, O(n^2). Makes no triangle-inequality
 //                        assumption, so it is the reference for whether the early stop ever matters.
-enum SolverType {BELLMAN, BELLMAN_SOFT, BELLMAN_BOUNDED, LINEAR, LINEAR_SOFT, LINEAR_BOUNDED, BELLMAN_PTVRP, LINEAR_PTVRP, LAYERED_PTVRP, BELLMAN_PTVRP_CONT};
+enum SolverType {BELLMAN, BELLMAN_SOFT, BELLMAN_BOUNDED, LINEAR, LINEAR_SOFT, LINEAR_BOUNDED, BELLMAN_PTVRP, LINEAR_PTVRP, LAYERED_PTVRP, BELLMAN_PTVRP_CONT, LAYERED_PTVRP_CONT};
 
 // Service time incurred at a vendor on each visit, in the same time units as the horizon.
 // PT-VRP defines tau(sigma) as the travel time of one trip plus the service time of every vendor

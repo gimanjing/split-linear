@@ -5,6 +5,10 @@ Vidal's Split library, extended with the Periodic-Template VRP (PT-VRP), where a
 executed `m(sigma) = ceil(q(sigma)/Q)` times over a horizon, so its cost is `d(sigma)*m(sigma)` and
 its duration `tau(sigma)*m(sigma)` must fit `T_H`.
 
+**`revival.md`** is the step-by-step explanation of one specific finding: the early stop used by
+time-constrained Split is unsound, with worked traces on a 10-vendor instance and on the
+counterexamples. Start there if you want the mechanism rather than the survey.
+
 **`NOTES.md`** is the research write-up: why Vidal's linear Split does not apply here, what
 replaces it, the full measurements, the lines of attack that failed, and what is still open.
 
@@ -28,6 +32,8 @@ Then:
 | `PTVRP` | exact PT-VRP DP, `O(nB)`. The reference answer |
 | `PTVRP_LINEAR` | Vidal's deque applied to PT-VRP anyway. **Deliberately wrong**, kept to measure the error |
 | `PTVRP_LAYERED` | one deque per trip count, `O(nK)`. Exact |
+| `PTVRP_CONT` | Bellman with no early stop, `O(n^2)`. Control for `revival.md` |
+| `PTVRP_LAYERED_CONT` | layers kept, horizon pruning dropped, `O(n^2K)`. Control for `revival.md` |
 
 ## Learning the three PT-VRP algorithms
 
