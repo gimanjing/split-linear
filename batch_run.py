@@ -13,14 +13,14 @@ Examples
   python3 batch_run.py --dir "Instances/Instances 2" --solver PTVRP --limit 20 --out quick.csv
 
 Open the CSV in Excel. Columns: instance, n, Q, horizon, solver, cost, templates,
-max_m, seconds, plus the layer diagnostics when the layered solver is used, and
-gap_vs_first when more than one solver is given.
+max_m, seconds, the layer diagnostics when the layered solver is used, the revived-arc
+counts when PTVRP_CONT is used, and gap_vs_first when more than one solver is given.
 """
 import argparse, csv, glob, os, random, re, subprocess, sys, time
 
 FIELDS = ["instance", "n", "Q", "horizon", "solver", "cost", "templates", "max_m",
           "seconds", "K_full_tour", "K_allocated", "max_layer_used", "layer_iterations",
-          "eff_K", "gap_vs_first"]
+          "eff_K", "revived_arcs", "revived_improving", "gap_vs_first"]
 
 
 def read_header(path):
@@ -60,6 +60,9 @@ def run_one(binary, path, solver, timeout):
         "max_layer_used": grab(r"MAX LAYER USED\s+: (\d+)", int),
         "layer_iterations": grab(r"LAYER ITERATIONS\s+: (\d+)", int),
         "eff_K": grab(r"effective K = ([\d.]+)"),
+        # PTVRP_CONT only : arcs the early stop in PTVRP would never have evaluated
+        "revived_arcs": grab(r"REVIVED ARCS : (\d+)", int),
+        "revived_improving": grab(r"REVIVED IMPROVING : (\d+)", int),
     }
     if row["cost"] == "":
         # the solver refused the instance (infeasible, or unreadable)
