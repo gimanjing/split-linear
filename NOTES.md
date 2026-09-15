@@ -3,6 +3,9 @@
 Working notes on the Periodic-Template VRP (PT-VRP): why Vidal's linear-time Split does not
 apply to it, what does apply, what it costs, and what is still open.
 
+`revival.md` is the standalone, step-by-step account of the early-stop finding (§5.8-§5.10 here),
+written for a reader who wants the mechanism rather than the survey.
+
 These are research notes, not a finished paper. Every number below was produced by the code in
 this repository and is reproducible by the commands in §9. Where an earlier claim of ours turned
 out to be wrong, the correction is recorded in place rather than quietly removed (§10).
@@ -455,6 +458,12 @@ and adds two legs, so the duration changes by
 which is non-negative only under the triangle inequality. Where that fails, a longer template can be
 *shorter*, and if the shorter one fits the horizon the early stop has already walked away from it.
 
+`PTVRP_LAYERED_CONT` (`Split_Layered_PTVRP_cont.{h,cpp}`) is the layered counterpart: it keeps the
+layer partition, which is load-based and unconditionally exact, and drops only the two one-way time
+pointers, testing each start's feasibility individually. `O(n^2 K)`. It agrees with `PTVRP_CONT` on
+the 480 benchmark instances with `n <= 600`, and returns the true optimum on all four
+counterexamples.
+
 `PTVRP_CONT` (`Split_Bellman_PTVRP_cont.{h,cpp}`) is the control: the same DP with `continue` in
 place of `break`, so every pair `(i,j)` is evaluated. It counts **revived arcs** — arcs that are
 feasible although an earlier one was not, i.e. exactly what the early stop never sees.
@@ -462,12 +471,12 @@ feasible although an earlier one was not, i.e. exactly what the early stop never
 Four instances in `Instances/Counterexamples/`, each `n = 3`, each verified against exhaustive
 enumeration of all partitions:
 
-| instance | true optimum | `PTVRP` | `PTVRP_CONT` | `PTVRP_LAYERED` | triangle violation |
-|---|---|---|---|---|---|
-| `ce_rounding` | **80** | 101 (+26%) | 80 | 101 (+26%) | **1 unit** |
-| `ce_blatant` | **70** | 120 (+71%) | 70 | 120 (+71%) | 40 units |
-| `ce_multiplier` | **240** | 241 | 240 | 241 | 1 unit, with `m = 2` |
-| `ce_infeasible` | **70** | `NO SOLUTION` | 70 | 70 | 40 units |
+| instance | true optimum | `PTVRP` | `PTVRP_CONT` | `PTVRP_LAYERED` | `PTVRP_LAYERED_CONT` | triangle violation |
+|---|---|---|---|---|---|---|
+| `ce_rounding` | **80** | 101 (+26%) | 80 | 101 (+26%) | 80 | **1 unit** |
+| `ce_blatant` | **70** | 120 (+71%) | 70 | 120 (+71%) | 70 | 40 units |
+| `ce_multiplier` | **240** | 241 | 240 | 241 | 240 | 1 unit, with `m = 2` |
+| `ce_infeasible` | **70** | `NO SOLUTION` | 70 | 70 | 70 | 40 units |
 
 Three things these establish that the 3,150-instance sweep could not.
 
@@ -690,7 +699,10 @@ objective, gives 2-opt final/start cost **0.477 → 0.501**. Clustered demand ma
    | neither | 310 |
 
    24,050 flagged positions produced 167 revived arcs: a sound alarm (zero misses) but a 144:1 false
-   alarm rate, tripping on 740 of 1,050 instances. As evidence it is close to useless. The fix is to
+   alarm rate, tripping on 740 of 1,050 instances. As evidence it is close to useless. **Now built**: `PTVRP_LAYERED_CONT` mirrors the `PTVRP_CONT`
+   instrumentation, reporting `REVIVED STARTS` / `REVIVED IMPROVING` for starts behind the frontier.
+   It agrees with `PTVRP_CONT` on the 480 instances with `n <= 600`; the rest of the benchmark is
+   still out of reach at `O(n^2 K)`. The original suggestion was to
    mirror the `PTVRP_CONT` instrumentation inside `firstTimeLE[k]` -- count starts the pointer walked
    past that were in fact horizon-feasible, and how many would have improved a label. Until that
    exists, the layered half of this question rests on cost agreement, which is weaker than it looks:
