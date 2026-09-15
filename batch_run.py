@@ -20,7 +20,7 @@ import argparse, csv, glob, os, random, re, subprocess, sys, time
 
 FIELDS = ["instance", "n", "Q", "horizon", "solver", "cost", "templates", "max_m",
           "seconds", "K_full_tour", "K_allocated", "max_layer_used", "layer_iterations",
-          "eff_K", "revived_arcs", "revived_improving", "gap_vs_first"]
+          "eff_K", "revived_arcs", "revived_starts", "revived_improving", "gap_vs_first"]
 
 
 def read_header(path):
@@ -39,8 +39,9 @@ def read_header(path):
 def run_one(binary, path, solver, timeout):
     t0 = time.time()
     try:
+        # timeout 0 means uncapped : a huge float overflows poll() on recent Pythons
         out = subprocess.run([binary, path, "-solver", solver],
-                             capture_output=True, text=True, timeout=timeout).stdout
+                             capture_output=True, text=True, timeout=timeout or None).stdout
     except subprocess.TimeoutExpired:
         return {"cost": "TIMEOUT", "seconds": timeout}
     elapsed = time.time() - t0
@@ -62,6 +63,8 @@ def run_one(binary, path, solver, timeout):
         "eff_K": grab(r"effective K = ([\d.]+)"),
         # PTVRP_CONT only : arcs the early stop in PTVRP would never have evaluated
         "revived_arcs": grab(r"REVIVED ARCS : (\d+)", int),
+        # PTVRP_LAYERED_CONT only : starts behind the frontier PTVRP_LAYERED would have pruned
+        "revived_starts": grab(r"REVIVED STARTS : (\d+)", int),
         "revived_improving": grab(r"REVIVED IMPROVING : (\d+)", int),
     }
     if row["cost"] == "":
@@ -79,7 +82,7 @@ def main():
     ap.add_argument("--out", default="results.csv", help="CSV to write (default results.csv)")
     ap.add_argument("--limit", type=int, help="run only this many instances per folder")
     ap.add_argument("--seed", type=int, default=0, help="sampling seed used with --limit")
-    ap.add_argument("--timeout", type=float, default=300, help="per-run timeout in seconds")
+    ap.add_argument("--timeout", type=float, default=300, help="per-run timeout in seconds, 0 for no limit")
     ap.add_argument("--binary", default=os.path.join("Program", "split"))
     args = ap.parse_args()
 
@@ -119,9 +122,10 @@ def main():
                 row.update({"instance": os.path.relpath(path), "n": n, "Q": Q,
                             "horizon": horizon, "solver": solver})
                 w.writerow({k: row.get(k, "") for k in FIELDS})
+            # flush every instance : a slow solver can spend hours on one file, keep what is done on disk
+            fh.flush()
             if idx % 25 == 0 or idx == len(files):
-                print(f"  {idx}/{len(files)}")
-                fh.flush()
+                print(f"  {idx}/{len(files)}", flush=True)
     print(f"done -> {args.out}")
 
 
