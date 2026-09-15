@@ -438,6 +438,135 @@ Monge technique.
 
 ---
 
+### 5.8 The early stop is unsound: four counterexamples
+
+The Bellman DP and the layered decoder both terminate a scan early. `Split_Bellman_PTVRP.cpp:77`
+breaks the forward scan at the first `j` with `tau(i,j)*m > T_H`; `Split_Layered_PTVRP.cpp:123`
+advances `firstTimeLE[k]` past starts failing the same test. Both rest on `tau(i,j)*m` being
+non-decreasing in `j`.
+
+**It is not.** Extending a template from `v_j` to `v_{j+1}` *drops* the return leg `d(v_j, depot)`
+and adds two legs, so the duration changes by
+
+```
+    d(v_j, v_{j+1}) + d(v_{j+1}, depot) - d(v_j, depot)
+```
+
+which is non-negative only under the triangle inequality. Where that fails, a longer template can be
+*shorter*, and if the shorter one fits the horizon the early stop has already walked away from it.
+
+`PTVRP_CONT` (`Split_Bellman_PTVRP_cont.{h,cpp}`) is the control: the same DP with `continue` in
+place of `break`, so every pair `(i,j)` is evaluated. It counts **revived arcs** — arcs that are
+feasible although an earlier one was not, i.e. exactly what the early stop never sees.
+
+Four instances in `Instances/Counterexamples/`, each `n = 3`, each verified against exhaustive
+enumeration of all partitions:
+
+| instance | true optimum | `PTVRP` | `PTVRP_CONT` | `PTVRP_LAYERED` | triangle violation |
+|---|---|---|---|---|---|
+| `ce_rounding` | **80** | 101 (+26%) | 80 | 101 (+26%) | **1 unit** |
+| `ce_blatant` | **70** | 120 (+71%) | 70 | 120 (+71%) | 40 units |
+| `ce_multiplier` | **240** | 241 | 240 | 241 | 1 unit, with `m = 2` |
+| `ce_infeasible` | **70** | `NO SOLUTION` | 70 | 70 | 40 units |
+
+Three things these establish that the 3,150-instance sweep could not.
+
+**(a) The violation need only be one unit.** `ce_rounding` has `d(v_2, depot) = 21` against
+`d(v_2, v_3) + d(v_3, depot) = 20` — a violation of exactly the magnitude TSPLIB's independent
+integer rounding produces. The horizon is then placed so that `d(0,2) = 81 > T_H = 80 >= d(0,3) = 80`.
+This is not an artefact of pathological geometry; it is reachable from the rounding already present
+in the instance set.
+
+**(b) The multiplier does not protect.** `ce_multiplier` keeps `m = 2` constant across the revival
+step, so the failure survives into the regime PT-VRP actually cares about. The margin is 1 unit in
+240, which is the honest size: revival needs `m` *not* to step at that position (§5.9), and that
+constrains how much cost can ride on the revived arc.
+
+**(c) The failure mode includes false infeasibility.** `ce_infeasible` is feasible at cost 70 and
+`PTVRP` reports no solution at all. For a decoder feeding a penalty-based fitness this is worse than
+a suboptimal cost — it misreports the feasible region.
+
+**The two decoders fail on overlapping but different sets.** `PTVRP_LAYERED` reproduces `PTVRP`'s
+error on the first three and is *correct* on `ce_infeasible`. The mechanisms are not the same bug:
+`break` abandons a start permanently, whereas `firstTimeLE[k]` is a window over predecessors that a
+later column can still re-admit. This is the direct evidence on "which pointer" that §7.4 asked for
+and that cost agreement alone could not supply.
+
+**What the sweep says anyway.** On all 3,150 real instances the three solvers agree exactly
+(§5.1), and the early stop skipped an improving arc on 103 of them without ever changing an answer.
+So the correct statement is not "the early stop is safe" but:
+
+> The early stop is **unsound**, demonstrably so at rounding scale, and **empirically harmless on
+> every instance in this benchmark set**.
+
+### 5.9 Where revival lives, and why it is horizon-free
+
+Revival requires two things at the step where a start crosses the horizon:
+
+1. **`m` must not step there.** If the multiplier increments, `tau*m` jumps up by a whole `d*Delta m`
+   and swamps any backward wobble. Probability that it does not step is roughly `(1 - rho)^+` for
+   `rho = qbar/Q`.
+2. **The wobble must beat the drift.** Forward drift per step is about `m*c` for mean arc `c`;
+   backward wobble is at most `m*delta` for one rounding unit `delta`. **The `m` cancels**, leaving
+   the condition `delta/c` — free of both horizon and capacity.
+
+There is also a clean counting fact: **every start crosses the horizon exactly once**, so there are
+exactly `n` chances per instance regardless of `T_H`. The horizon moves *where* along the scan the
+crossing happens, not *how many* crossings there are.
+
+Measured over the 3,150-instance sweep:
+
+| | revived arcs per million crossings |
+|---|---|
+| `rho < 1` (`m` does not step at every vendor) | **38.2** |
+| `rho >= 1` (`m` steps at every vendor) | **1.1** |
+
+A 35x cliff at `rho = 1`, exactly where the gate predicts it. Per-instance rates rise 0.2% -> 12.6%
+with `n` simply because there are more crossings, not because the process differs. Caveat: the
+per-crossing rate is not flat across `n` (6.7 / 77 / 33 / 35 per million by size bucket); short tours
+are lower, most likely because many starts never reach the horizon at all.
+
+**This is the same dimensionless group as §7.3.** That section derives `B` and `K` both scaling as
+`sqrt(T_H)`, so the ratio `B/K = Q/qbar = 1/rho` is horizon-free. Revival is governed by the same
+`rho` and is horizon-free for the same reason: `T_H` cancels. The two questions are separate — §7.3
+is performance, §5.9/§7.4 is correctness — but one experiment tests both (§7.3's two-horizon rerun).
+
+### 5.10 Vidal's original Split is not affected
+
+Worth stating explicitly, because the counterexamples above invite the inference that the same defect
+sits in the classic algorithm. It does not. Every termination and eviction condition in Vidal's
+originals is **load-based**:
+
+```
+Split_Bellman.cpp:36           for (... ; j <= nbNodes && load <= vehCapacity ; j++)
+Split_Bellman_Bounded.cpp:45   for (... ; j <= nbNodes && load <= vehCapacity ; j++)
+Split_Linear.cpp:56            while (sumLoad[i+1] - sumLoad[front] > vehCapacity + 0.0001)
+Split_Linear_Bounded.cpp:75    while (sumLoad[i+1] - sumLoad[front] > vehCapacity + 0.0001)
+```
+
+Load is a cumulative sum of non-negative demands, hence strictly increasing in `j`
+**unconditionally** — no geometry, no triangle inequality, nothing for rounding to perturb. Once
+`load > Q` it stays `> Q`. Vidal's early termination is sound by construction and revival is
+impossible in his setting.
+
+His own source corroborates the principle. In `Split_Bellman_Soft.cpp:37`, where capacity becomes a
+penalty rather than a hard limit and the monotone stopping rule no longer applies, the guard is
+commented out and the scan runs to `n`:
+
+```cpp
+for (int j = i+1 ; j <= myData->nbNodes /* && load <= 4.0 * myData->vehCapacity */ ; j++)
+```
+
+The same reasoning as `PTVRP_CONT`, reached independently: when the quantity you would break on stops
+being monotone, stop breaking on it.
+
+**The transferable claim is therefore about the constraint, not the author.** Any Split that
+terminates on accumulated **time** rather than accumulated **load** inherits this defect — the
+distance-constrained VRP, VRPTW, any duration-limited variant. Load is monotone by construction;
+duration is monotone only under the triangle inequality, and rounded instances do not satisfy it.
+Without a `_cont`-style control there is nothing to observe, which may be why it appears to be
+unreported.
+
 ## 6. A line of attack that did not survive contact
 
 The §5.6 result suggests an obvious move: if tail-loading cuts `eff_K` by 40%, reorder the
@@ -529,18 +658,50 @@ objective, gives 2-opt final/start cost **0.477 → 0.501**. Clustered demand ma
    every instance here has `T_H = 86,400`. This is the cheapest available test of §5.4 on a
    dimension it was not fitted to, and it supersedes the earlier guess in this slot that a shorter
    horizon *should* move the crossover (§10.6).
-4. **Does the monotonicity violation ever matter -- and on which pointer?** Narrowed. The decoder
-   maintains two pointer families and only one is at risk. `firstLoadLE[k]`
-   (`Split_Layered_PTVRP.cpp:113`) advances on `trips(i,j)`, which is load-based; since `L[]` is
-   strictly increasing that pointer is monotone **unconditionally** and rounding cannot touch it, so
-   the layer partition is always safe. `firstTimeLE[k]` (`:123`) advances on
-   `At[i] > T_H/k - Bt[j]`, and *that* is what needs `At` non-increasing and `Bt` non-decreasing --
-   it is also what the counter at `:51` measures. The question is therefore only ever about the
-   **horizon-feasibility frontier**, and the failure is two-sided: a feasible start skipped, or an
-   infeasible one admitted. Both are confined to starts within one rounding unit of `tau·m = T_H`,
-   which makes an adversarial construction much easier than §3.3 implies -- place a template exactly
-   on the horizon boundary and perturb one arc by the rounding slack. Zero effect in 2,829 instances
-   remains strong evidence but not a proof.
+4. **Does the monotonicity violation ever matter? -- Answered: yes. See §5.8.** The early stop is
+   **unsound**, not merely unproven. Four counterexamples in `Instances/Counterexamples/` drive
+   `PTVRP` to a wrong answer, one of them from a triangle violation of **exactly one unit** -- the
+   magnitude TSPLIB's independent integer rounding already produces -- and one of them to a false
+   `NO SOLUTION` on a feasible instance. All four verified against exhaustive enumeration.
+   `PTVRP_LAYERED` fails on three of the four and is correct on the fourth, so `break` and
+   `firstTimeLE[k]` are related but not identical defects: `break` abandons a start permanently,
+   whereas the layered window can re-admit one in a later column.
+
+   What remains open is now sharper, and in three parts.
+
+   **(a) Frequency on realistic geometry.** The counterexamples are constructed: the horizon is
+   placed deliberately in the one-unit gap. On the 3,150-instance benchmark the early stop skipped an
+   improving arc 177 times across 103 instances and **never** changed an answer. So the gap between
+   "unsound" and "harmful" is entirely a question of how often `T_H` lands in that window, and this
+   benchmark says: not once. Whether that survives a different horizon, a different rounding
+   convention, or non-Euclidean travel times is untested. §5.9 predicts the rate is horizon-free;
+   that prediction has not been run.
+
+   **(b) The layered decoder has no consequence counter.** `monotonicityViolations`
+   (`Split_Layered_PTVRP.cpp:51`) is a **precondition** check -- it scans `At[]`/`Bt[]` once and
+   counts where the arrays are non-monotone. `PTVRP_CONT`'s `revived_arcs` is a **consequence**
+   counter. Measured against each other on `Instances 1`:
+
+   | | instances |
+   |---|---|
+   | precondition flagged **and** arcs revived | 93 |
+   | precondition flagged, nothing revived | 647 |
+   | arcs revived, precondition **not** flagged | **0** |
+   | neither | 310 |
+
+   24,050 flagged positions produced 167 revived arcs: a sound alarm (zero misses) but a 144:1 false
+   alarm rate, tripping on 740 of 1,050 instances. As evidence it is close to useless. The fix is to
+   mirror the `PTVRP_CONT` instrumentation inside `firstTimeLE[k]` -- count starts the pointer walked
+   past that were in fact horizon-feasible, and how many would have improved a label. Until that
+   exists, the layered half of this question rests on cost agreement, which is weaker than it looks:
+   the decoder could skip a different set of starts and still reach the same total.
+
+   **(c) What to do about it.** Three options, none yet chosen. Keep the early stop and document it
+   as unsound-but-unobserved; replace the `break` with a bounded lookahead of a few positions, which
+   covers one-unit violations at near-zero cost; or enforce the triangle inequality once at load time
+   and report where the instance violates it. The third is the only one that restores a proof, and it
+   changes the instance rather than the algorithm.
+
 5. **Does any of this survive inside HGS?** Every result here is on a static giant tour. Split inside
    HGS is called on tours that are themselves evolving, and the distribution of those tours is not
    the distribution of TSPLIB orders. Two separable halves, neither attempted. **(a)** Does the
@@ -568,6 +729,11 @@ A snapshot of what is settled and what is not, so the distinction survives the n
 | Layer partition is rounding-safe; only the horizon frontier is at risk | read from the source | `firstLoadLE` vs `firstTimeLE` (§7.4) |
 | §7.2 asks for a *bound*; §5.4 supplies an *estimate* | — | reframe only, no new result |
 | `Q* = qbar·(beta/alpha)`, horizon-free | algebraic, from §5.4 | a prediction; untested (§7.3) |
+| The early stop (`break`, `firstTimeLE`) is **unsound** | 4 counterexamples vs exhaustive enumeration (§5.8) | one needs a violation of only **1 unit**; one yields false `NO SOLUTION` |
+| `break` and `firstTimeLE` are different defects | `ce_infeasible`: `PTVRP` wrong, `PTVRP_LAYERED` right | answers "which pointer" (§7.4) |
+| All 3 PT-VRP solvers agree on 3,150/3,150 real instances | full sweep, identical cost strings | agreement is not soundness (§5.8) |
+| Revival is gated by `rho = qbar/Q`, horizon-free | 35x rate cliff at `rho = 1` (§5.9) | per-crossing rate not flat in `n` |
+| Vidal's original Split is unaffected | every guard is load-based (§5.10) | load is monotone by construction |
 
 **Open**
 
@@ -577,7 +743,9 @@ A snapshot of what is settled and what is not, so the distinction survives the n
 | Are the §5.7 witnesses geometrically realisable? | open | scan the existing instances for a real sign-changing 4-tuple |
 | A priori bound on `K` (§7.2) | open | reframed, not answered; no candidate beyond what `K_allocated` already computes |
 | Does the crossover move with `T_H` (§7.3)? | prediction only | the two-horizon rerun |
-| Does a rounding violation ever matter (§7.4)? | narrowed, unanswered | an adversarial instance on the horizon boundary |
+| How often does the unsound early stop actually bite? (§7.4a) | 0 of 3,150 here | a horizon sweep; §5.9 predicts the rate is horizon-free |
+| Does `firstTimeLE` mis-step on real instances? (§7.4b) | only cost agreement | a consequence counter inside the layered decoder; the precondition counter is 144:1 loose |
+| Keep, patch, or reject the early stop? (§7.4c) | undecided | three options stated, none costed |
 | Survival inside HGS (§7.5) | untouched | centroid stability; cross-call reuse; infeasibility reporting |
 | Realisable fraction of §8.1 | open | unchanged — unknown until implemented |
 
@@ -656,6 +824,13 @@ cd Program && make
 python3 batch_run.py --dir "Instances/Instances 1" --dir "Instances/Instances 2" \
     --dir "Instances/Instances 3" \
     --solver PTVRP PTVRP_LINEAR PTVRP_LAYERED --out full_sweep.csv
+
+# the four counterexamples of §5.8 -- PTVRP is wrong on all four, PTVRP_CONT right on all four
+for f in Instances/Counterexamples/*.gt; do
+  for s in PTVRP PTVRP_CONT PTVRP_LAYERED; do
+    echo -n "$(basename $f) $s "; Program/split "$f" -solver $s 2>&1 | grep -E "SOLUTION COST|no Split"
+  done
+done
 
 # the skew matrix behind §5.6
 python3 skew_instances.py --src "Instances/Instances 1" --out Instances/skew --limit 40 \
