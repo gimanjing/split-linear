@@ -20,7 +20,8 @@ import argparse, csv, glob, os, random, re, subprocess, sys, time
 
 FIELDS = ["instance", "n", "Q", "horizon", "solver", "cost", "templates", "max_m",
           "seconds", "K_full_tour", "K_allocated", "max_layer_used", "layer_iterations",
-          "eff_K", "revived_arcs", "revived_starts", "revived_improving", "gap_vs_first"]
+          "eff_K", "revived_arcs", "revived_starts", "revived_improving", "infeasible_skips",
+          "unsafe_pops", "gap_vs_first"]
 
 
 def read_header(path):
@@ -63,8 +64,11 @@ def run_one(binary, path, solver, timeout):
         "eff_K": grab(r"effective K = ([\d.]+)"),
         # PTVRP_CONT only : arcs the early stop in PTVRP would never have evaluated
         "revived_arcs": grab(r"REVIVED ARCS : (\d+)", int),
-        # PTVRP_LAYERED_CONT only : starts behind the frontier PTVRP_LAYERED would have pruned
+        # PTVRP_LAYERED_CONT only : layer winners behind the frontier PTVRP_LAYERED would have pruned
         "revived_starts": grab(r"REVIVED STARTS : (\d+)", int),
+        # PTVRP_LAYERED_CONT only : deque entries stepped over on time, and back-pops not provably safe
+        "infeasible_skips": grab(r"INFEASIBLE SKIPS : (\d+)", int),
+        "unsafe_pops": grab(r"UNSAFE POPS : (\d+)", int),
         "revived_improving": grab(r"REVIVED IMPROVING : (\d+)", int),
     }
     if row["cost"] == "":

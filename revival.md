@@ -336,8 +336,9 @@ different sets of instances.
 All 3,150 instances in `Instances/Instances 1,2,3`, three solvers each.
 
 **All three agree on all 3,150.** 2,829 feasible with identical cost strings, 321 infeasible
-unanimously, zero disagreements. The layered control `PTVRP_LAYERED_CONT` agrees too, on the
-480 instances with `n <= 600` where its `O(n²K)` cost is tolerable.
+unanimously, zero disagreements. The layered control `PTVRP_LAYERED_CONT` agreed too on the
+480 instances with `n <= 600`, where its first `O(n²K)` version was tolerable; the deque-based
+rebuild covers all 3,150 (`revival_result.md`).
 
 **But the early stop fires on 103 of them.** On those, a route the scan skipped would have improved a
 label when the control evaluated it. It never changed a final answer — improving a label mid-scan is
@@ -500,7 +501,7 @@ python3 batch_run.py --dir "Instances/Instances 1" --dir "Instances/Instances 2"
 | `PTVRP_CONT` | same DP, never stops early. `O(n²)`. **Control** |
 | `PTVRP_LINEAR` | Vidal's deque applied to PT-VRP. Wrong for a different reason (§2.2) |
 | `PTVRP_LAYERED` | one deque per trip count, plus time pruning. `O(nK)` |
-| `PTVRP_LAYERED_CONT` | layers kept, time pruning dropped. `O(n²K)`. **Control** |
+| `PTVRP_LAYERED_CONT` | layers and deques kept, time pruning dropped. `O(n·K_full)`. **Control** (see `revival_result.md`) |
 
 ---
 

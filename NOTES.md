@@ -460,9 +460,11 @@ which is non-negative only under the triangle inequality. Where that fails, a lo
 
 `PTVRP_LAYERED_CONT` (`Split_Layered_PTVRP_cont.{h,cpp}`) is the layered counterpart: it keeps the
 layer partition, which is load-based and unconditionally exact, and drops only the two one-way time
-pointers, testing each start's feasibility individually. `O(n^2 K)`. It agrees with `PTVRP_CONT` on
-the 480 benchmark instances with `n <= 600`, and returns the true optimum on all four
-counterexamples.
+pointers. The first version scanned every start in every layer, `O(n^2 K)`, and agreed with
+`PTVRP_CONT` on the 480 instances with `n <= 600`. It has since been rebuilt on `PTVRP_LAYERED`'s own
+deques: infeasible starts are stepped over at query time instead of discarded, `O(n·K_full)`, which
+makes the full 3,150-instance sweep feasible. It returns the true optimum on all four counterexamples.
+Full-sweep results and the one assumption the deque still carries are in `revival_result.md`.
 
 `PTVRP_CONT` (`Split_Bellman_PTVRP_cont.{h,cpp}`) is the control: the same DP with `continue` in
 place of `break`, so every pair `(i,j)` is evaluated. It counts **revived arcs** — arcs that are
@@ -701,8 +703,8 @@ objective, gives 2-opt final/start cost **0.477 → 0.501**. Clustered demand ma
    24,050 flagged positions produced 167 revived arcs: a sound alarm (zero misses) but a 144:1 false
    alarm rate, tripping on 740 of 1,050 instances. As evidence it is close to useless. **Now built**: `PTVRP_LAYERED_CONT` mirrors the `PTVRP_CONT`
    instrumentation, reporting `REVIVED STARTS` / `REVIVED IMPROVING` for starts behind the frontier.
-   It agrees with `PTVRP_CONT` on the 480 instances with `n <= 600`; the rest of the benchmark is
-   still out of reach at `O(n^2 K)`. The original suggestion was to
+   It agreed with `PTVRP_CONT` on the 480 instances with `n <= 600` at `O(n^2 K)`; the deque-based
+   rebuild at `O(n·K_full)` now covers all 3,150 (`revival_result.md`). The original suggestion was to
    mirror the `PTVRP_CONT` instrumentation inside `firstTimeLE[k]` -- count starts the pointer walked
    past that were in fact horizon-feasible, and how many would have improved a label. Until that
    exists, the layered half of this question rests on cost agreement, which is weaker than it looks:
