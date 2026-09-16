@@ -171,6 +171,23 @@ counts violations and reports them; §5.1 measures whether they ever change an a
 vendors have `q_i > Q`, so classic Split cannot solve them at all while PT-VRP can — those sets are
 the reason the multiplier exists.
 
+**Two things about this layout that are easy to misread, and both matter for any claim built on it.**
+
+*There are 105 geometries, not 3,150.* Each point set appears 30 times — ten suffixes in each of the
+three folders — and the arcs are byte-identical across all of them. Anything that is a property of the
+**geometry**, the triangle inequality above all, must be counted over 105 tours, not over files, or the
+figure is inflated thirtyfold. Across the 105 distinct tours the inequality fails at 1,214 of 437,593
+positions (0.277%), on 60% of tours, always by exactly one unit.
+
+*The suffix means different things in different folders.* In sets 2 and 3 it selects a demand draw at a
+fixed capacity. In set 1 it changes the demand draw **and** the capacity together — `_01` is Q=100 with
+q_tot 7,161, `_02` is Q=200 with q_tot 6,791. So `Instances 1` is **not** a controlled capacity sweep:
+the two factors are confounded and a change cannot be attributed to either. It is also not "the Q=100
+set" — only `_01` is. Any per-folder aggregate for set 1 in this document averages over ten capacities.
+
+For a controlled comparison across capacity, use the `_01` slice of each folder: 105 geometries, the
+same demand vector, Q = 100 / 20 / 10. That is what §5.5's crossover table and the K comparison use.
+
 ### 4.2 Two defects found before any result was trustworthy
 
 These are worth recording because each would have silently corrupted everything downstream.

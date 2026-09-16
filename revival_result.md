@@ -353,13 +353,17 @@ is: *the frontier is worth 12×, and a sound frontier recovers it for 18%.*
    `eff_K` on `Instances 3` goes 998.9 -> 30.2, against 29.2 for the unsound frontier.
 5. **Soundness costs 1.18× (layered) and 1.13× (Bellman)**, not the 169× the unbounded control needed.
    Both remain ~20× faster than the oracle that assumes nothing (§6.3).
-6. **The remaining assumption is the back-pop.** It is counted (`UNSAFE POPS`) and never fired here,
-   in either the unbounded control or the fixed solver. `PTVRP_CONT_FIX` has no deque and carries no
-   such assumption at all.
+6. **The back-pop was the last assumption, and it is now gone.** It is counted (`UNSAFE POPS`) and
+   never fired on the benchmark, but a five-vendor instance drives every unguarded layered solver to
+   `NO SOLUTION` on a problem feasible at 658 (§8.1). `PTVRP_LAYERED_SAFE` evicts only on joint
+   dominance -- cheaper **and** at least as feasible -- which is right 60/60 on structurally
+   non-metric data where the unguarded version was 59/60, and costs nothing on the benchmark because
+   the guard never engages there (§8.2). `PTVRP_CONT_FIX` has no deque and never carried the
+   assumption at all.
 
 ---
 
-## 8. Where the fix stops being unconditional
+## 8. Where the fix stopped being unconditional -- and how that was closed
 
 The path-out bound is instance-independent by construction, so it was worth testing on data that
 breaks the triangle inequality *structurally* rather than by one rounding unit -- what a
@@ -395,13 +399,11 @@ decisively.
 `UNSAFE POPS` fired on the failing instance -- 78 in the fixed solver, 103 in the unbounded control
 -- so the counter is a working alarm rather than a decoration, and §3's exactness certificate
 correctly declines to certify there. The certificate was always conditional on that counter being
-zero; this is the instance showing the condition is load-bearing. Three ways to use it:
+zero; this is the instance showing the condition is load-bearing.
 
-1. **Prefer `PTVRP_CONT_FIX`** wherever duration is not a function of distance. It carries no deque
-   and no such assumption.
-2. **Treat `UNSAFE POPS > 0` as a fallback trigger** -- rerun that instance on the Bellman fix.
-3. **Make the back-pop feasibility-aware** -- only evict when `At[new] <= At[old]` as well as on key.
-   Not yet implemented, and it would cost deque length, so it needs measuring.
+**This is now fixed** -- see §8.2. The three workarounds this section originally proposed (prefer the
+Bellman solver, treat `UNSAFE POPS > 0` as a fallback trigger, or make the back-pop feasibility-aware)
+are superseded: the third one was built, and it costs nothing.
 
 ### 8.1 A five-vendor instance where the back-pop loses the answer
 
@@ -460,6 +462,59 @@ for s in PTVRP_CONT PTVRP_CONT_FIX PTVRP_LAYERED_CONT_FIX; do
   Program/split Instances/Counterexamples/ce_unsafe_pop_5v.gt -solver $s 2>&1 \
     | grep -oE "SOLUTION COST : [0-9.]+|UNSAFE POPS : [0-9]+|no Split solution"; echo
 done
+```
+
+### 8.2 Closing it: `PTVRP_LAYERED_SAFE`
+
+The eviction discards an older start when a newer one has a key at least as small -- a comparison on
+**cost only**. Feasibility has its own `j`-independent ranking, and it is `At[i]`: feasibility at
+column `j` in layer `k` is `At[i] + Bt[j] <= T_H/k`, and comparing two starts at the SAME `j` cancels
+`Bt[j]` exactly as it cancels in the cost. So
+
+```
+    At[new] <= At[old]   <=>   wherever old fits, new fits -- at every j, for ever
+```
+
+That is the one `j`-independent comparison that still accounts for the leg home, which is why the fix
+belongs in the eviction and could never have gone in the pruning: a *hard prune* can only use the
+path-out bound, and the path-out bound excludes the leg home by construction.
+
+`Split_Layered_PTVRP_safe.{h,cpp}` therefore evicts only on joint dominance:
+
+```cpp
+evict old   when   key(new) <= key(old)   AND   At[new] <= At[old]
+```
+
+Under the triangle inequality `At` is non-increasing, so the second clause is automatic, the guard
+never blocks, and the deque stays key-sorted -- the original O(1) "first feasible from the front"
+query is untouched. Where the guard does block, that layer is no longer key-ordered, so it scans for
+the cheapest feasible entry instead. `sortedByKey[k]` tracks which regime each layer is in, and
+`BLOCKED POPS` / `UNSORTED QUERIES` report both.
+
+| | `..._CONT_FIX` | **`..._SAFE`** |
+|---|---|---|
+| `ce_unsafe_pop_5v` (optimum 658) | `NO SOLUTION` | **658** |
+| 60 structurally non-metric instances | 59 / 60 | **60 / 60** (5,205 pops blocked) |
+| all 3,150 benchmark instances | 2,829 + 321, exact | **2,829 + 321, exact** |
+| `BLOCKED POPS` on the benchmark | — | **0** |
+| `UNSORTED QUERIES` on the benchmark | — | **0** |
+| total wall clock, 3,150 | 28.0 s | **28.0 s** |
+| median `eff_K` | 17.3 | **17.3** |
+
+The stronger reading of the benchmark row is not that the guard fixed instances but that it **never
+had to act**. `UNSORTED QUERIES = 0` means no layer ever left the fast query, which is why it is
+free here: identical `eff_K` to three decimals, identical wall clock.
+
+So the layered decoder now carries **no assumption about the instance at all**: Property 2 from
+layering, the horizon bound from the path out, eviction safety from the guard. The `UNSAFE POPS = 0`
+qualifier can come off §3's exactness claim -- the condition is enforced rather than counted.
+
+Reproduce:
+
+```bash
+Program/split Instances/Counterexamples/ce_unsafe_pop_5v.gt -solver PTVRP_LAYERED_SAFE
+python3 batch_run.py --dir "Instances/Instances 1" --dir "Instances/Instances 2" \
+    --dir "Instances/Instances 3" --solver PTVRP_LAYERED_SAFE --timeout 0 --out safe.csv
 ```
 
 Reproduce the 60-instance sweep:
