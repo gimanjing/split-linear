@@ -11,6 +11,10 @@ accumulated *load* (§8).
 **The fix:** stop on the route *without* the leg home. Sound with no assumption about the instance,
 nothing precomputed, and it costs 1.13x (§9).
 
+**The other defect:** fixing the stop does not make the layered decoder unconditional. Its deque
+evicts on cost alone, which is a separate unsound step with a separate fix. That one has its own
+note: `pop.md`.
+
 Everything below is produced by the code in this repository. Every trace is copied from real output;
 nothing is illustrative. Commands are in §9.
 

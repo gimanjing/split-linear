@@ -466,6 +466,11 @@ done
 
 ### 8.2 Closing it: `PTVRP_LAYERED_SAFE`
 
+> The full formal treatment of this defect -- the dominance condition, why capacity-only Split is
+> immune to it unconditionally, the Pareto structure the deque degenerates into, and a four-vendor
+> duration-constrained CVRP with no multiplier where it fails completely -- is in **`pop.md`**.
+
+
 The eviction discards an older start when a newer one has a key at least as small -- a comparison on
 **cost only**. Feasibility has its own `j`-independent ranking, and it is `At[i]`: feasibility at
 column `j` in layer `k` is `At[i] + Bt[j] <= T_H/k`, and comparing two starts at the SAME `j` cancels
