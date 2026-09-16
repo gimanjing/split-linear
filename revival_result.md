@@ -359,7 +359,56 @@ is: *the frontier is worth 12×, and a sound frontier recovers it for 18%.*
 
 ---
 
-## 8. Open, following from this
+## 8. Where the fix stops being unconditional
+
+The path-out bound is instance-independent by construction, so it was worth testing on data that
+breaks the triangle inequality *structurally* rather than by one rounding unit -- what a
+time-dependent travel model, depot waiting times, or driver-hours rules would produce.
+
+`Instances/Counterexamples/structural_violation.gt` is such an instance: legs home drawn
+independently of the inter-vendor arcs, so **46% of positions violate the triangle inequality, by a
+median of 156 units and up to 482**. TSPLIB violations are always exactly 1.
+
+Over 60 instances of that kind:
+
+| | result |
+|---|---|
+| instances with `UNSAFE POPS` > 0 | **60 / 60** (5,304 pops) |
+| `PTVRP_CONT_FIX` wrong | **0 / 60** |
+| `PTVRP_LAYERED_CONT_FIX` wrong | **1 / 60** (oracle 88,554, returned 88,909) |
+
+**The Bellman fix is unconditional.** Its only assumption is the path-out bound, which is arithmetic
+-- append a non-negative leg, remove nothing -- and holds however the leg is priced.
+
+**The layered fix is not.** It retains the deque's key-only back-pop: an older start is discarded
+when a newer one has a key at least as small, which is safe for feasibility only if the newer start
+also fits the horizon whenever the older does, i.e. `At[new] <= At[old]`. That needs `At`
+non-increasing, which needs the triangle inequality. Rounding never triggered it -- **zero across all
+3,150 benchmark instances**. Structural violations trigger it on every instance, and occasionally
+decisively.
+
+`UNSAFE POPS` fired (78) on the failing instance, so the counter is a working alarm rather than a
+decoration. Three ways to use it:
+
+1. **Prefer `PTVRP_CONT_FIX`** wherever duration is not a function of distance. It carries no deque
+   and no such assumption.
+2. **Treat `UNSAFE POPS > 0` as a fallback trigger** -- rerun that instance on the Bellman fix.
+3. **Make the back-pop feasibility-aware** -- only evict when `At[new] <= At[old]` as well as on key.
+   Not yet implemented, and it would cost deque length, so it needs measuring.
+
+Reproduce:
+
+```bash
+for s in PTVRP_CONT PTVRP_CONT_FIX PTVRP_LAYERED_CONT_FIX; do
+  echo -n "$s "
+  Program/split Instances/Counterexamples/structural_violation.gt -solver $s 2>&1 \
+    | grep -oE "SOLUTION COST : [0-9.]+|UNSAFE POPS : [0-9]+" | tr '\n' ' '; echo
+done
+```
+
+---
+
+## 9. Open, following from this
 
 - **Split the 85-instance gap (§4.1).** Count *every* feasible start behind the replayed frontier, not
   only layer winners. That separates "different pointer" from "not the winner".
@@ -377,7 +426,7 @@ is: *the frontier is worth 12×, and a sound frontier recovers it for 18%.*
 
 ---
 
-## 9. Reproducing
+## 10. Reproducing
 
 ```bash
 cd Program && make && cd ..
