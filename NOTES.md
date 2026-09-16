@@ -4,7 +4,9 @@ Working notes on the Periodic-Template VRP (PT-VRP): why Vidal's linear-time Spl
 apply to it, what does apply, what it costs, and what is still open.
 
 `revival.md` is the standalone, step-by-step account of the early-stop finding (§5.8-§5.10 here),
-written for a reader who wants the mechanism rather than the survey.
+written for a reader who wants the mechanism rather than the survey. `pop.md` is the same treatment
+for the second, independent defect: the deque's cost-only eviction, which discards feasible starts
+wherever the triangle inequality fails on the leg home.
 
 These are research notes, not a finished paper. Every number below was produced by the code in
 this repository and is reproducible by the commands in §9. Where an earlier claim of ours turned

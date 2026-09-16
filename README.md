@@ -19,6 +19,12 @@ one-way networks — breaks it without bound. **Two repairs, both implemented an
 the route *without* the leg home (1.13x), and evict from the deque only on joint dominance (free).
 Together they leave no assumption about the instance.
 
+**`pop.md`** is the companion note on the *second*, independent defect: the deque evicts on cost
+alone, so where the triangle inequality fails it can discard the only start that fits the horizon.
+It gives the dominance condition that makes eviction sound, why Vidal's capacity-only Split never
+needed it, and a four-vendor duration-constrained CVRP -- no multiplier, no layers -- where the
+failure is complete.
+
 **`NOTES.md`** is the research write-up: why Vidal's linear Split does not apply here, what
 replaces it, the full measurements, the lines of attack that failed, and what is still open.
 
@@ -48,13 +54,12 @@ kept as a baseline to measure against, a control, or a deliberate error — incl
 | `PTVRP` | PT-VRP DP stopping on the full route, `O(nB)`. **Unsound** — the original reference answer, wrong on all four counterexamples |
 | `PTVRP_LAYERED` | one deque per trip count, `O(nK)`. **Unsound frontier** — wrong on three of the four |
 | `PTVRP_LINEAR` | Vidal's deque applied to PT-VRP anyway. **Deliberately wrong**, kept to measure the error |
-| `PTVRP_CONT` | Bellman with no early stop, `O(n^2)`. The **oracle** — assumes nothing, ~20x slower |
+| `PTVRP_LAYERED` | one deque per trip count, `O(nK)`. Exact on the benchmark, but unsound on two counts -- the early stop (`revival.md`) and the eviction (`pop.md`) |
+| `PTVRP_CONT` | Bellman with no early stop, `O(n^2)`. Control for `revival.md` |
 | `PTVRP_LAYERED_CONT` | layers and deques kept, horizon pruning dropped, `O(n·K_full)`. Control for `revival.md`, results in `revival_result.md` |
-| `PTVRP_LAYERED_CONT_FIX` | layers plus a path-out frontier, `O(nK)`. Sound pruning, but the eviction still assumes the triangle inequality — superseded by `PTVRP_LAYERED_SAFE` |
-
-The two sound solvers cost 1.13x and 1.18x over their unsound counterparts, and both stay about 20x
-faster than `PTVRP_CONT`. `PTVRP_CONT_FIX` carries no deque and so no assumption at all;
-`PTVRP_LAYERED_SAFE` reaches the same place with a guarded eviction that never fires on metric data.
+| `PTVRP_CONT_FIX` | Bellman with the sound path-out stop. Exact with no assumption about the instance (`revival.md` §9) |
+| `PTVRP_LAYERED_CONT_FIX` | layered, with the sound path-out bound restored. Still evicts on cost alone (`pop.md`) |
+| `PTVRP_LAYERED_SAFE` | layered, sound bound **and** sound eviction. Exact with no assumption about the instance (`pop.md` §8) |
 
 ## Learning the three PT-VRP algorithms
 

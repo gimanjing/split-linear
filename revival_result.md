@@ -559,7 +559,15 @@ done
 
 ### 8.2 `PTVRP_LAYERED_SAFE`: sound eviction, and the last assumption goes
 
-The trace above names its own repair. The key compares cost; feasibility is not in it. So put it in:
+> The full formal treatment of this defect -- the dominance condition, why capacity-only Split is
+> immune to it unconditionally, the Pareto structure the deque degenerates into, and a four-vendor
+> duration-constrained CVRP with no multiplier where it fails completely -- is in **`pop.md`**.
+
+
+The eviction discards an older start when a newer one has a key at least as small -- a comparison on
+**cost only**. Feasibility has its own `j`-independent ranking, and it is `At[i]`: feasibility at
+column `j` in layer `k` is `At[i] + Bt[j] <= T_H/k`, and comparing two starts at the SAME `j` cancels
+`Bt[j]` exactly as it cancels in the cost. So
 
 ```
     evict b   when   key(i) <= key(b)   AND   At[i] <= At[b]

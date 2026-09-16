@@ -18,6 +18,10 @@ accumulated *load* (§8).
 and evict from the deque only on **joint** dominance. Sound with no assumption about the instance,
 nothing precomputed, 1.13x in Bellman and 1.18x in the layered decoder (§9).
 
+**The other defect:** fixing the stop does not make the layered decoder unconditional. Its deque
+evicts on cost alone, which is a separate unsound step with a separate fix. That one has its own
+note: `pop.md`.
+
 Everything below is produced by the code in this repository. Every trace is copied from real output;
 nothing is illustrative. Commands are in §9.
 
