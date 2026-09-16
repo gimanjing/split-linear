@@ -403,7 +403,66 @@ zero; this is the instance showing the condition is load-bearing. Three ways to 
 3. **Make the back-pop feasibility-aware** -- only evict when `At[new] <= At[old]` as well as on key.
    Not yet implemented, and it would cost deque length, so it needs measuring.
 
+### 8.1 A five-vendor instance where the back-pop loses the answer
+
+`Instances/Counterexamples/ce_unsafe_pop_5v.gt`. Small enough to check by hand, and the failure is
+the worst kind: **`NO SOLUTION` on an instance that is feasible at 658.**
+
+```
+CAPACITY 10   MAX_ROUTE 200
+
+  vendor   demand   home   to next
+       1        5     79         1
+       2       11     42         7
+       3        2     74        12
+       4        7      8         7
+       5       11     77         -
+```
+
+| solver | result |
+|---|---|
+| `PTVRP`, `PTVRP_CONT`, `PTVRP_CONT_FIX`, `PTVRP_LAYERED` | **658** (exhaustive enumeration agrees) |
+| `PTVRP_LAYERED_CONT`, `PTVRP_LAYERED_CONT_FIX` | **NO SOLUTION**, `UNSAFE POPS` = 1 |
+
+The deque ranks starts by `key(i,k) = p[i] + k·A[i]`, where `A[i] = d(v_{i+1},depot) − path(v_1..v_{i+1})`.
+The triangle inequality would force `A` to be non-increasing. Here it is not: `A = [79, 41, 66, −12, 50]`,
+violated at `i=2` and again at `i=4`.
+
+At column `j=5`, layer `k=2` holds the starts needing exactly two trips:
+
+| start | `p[i]` | `A[i]` | key | its route | fits `T_H = 200`? |
+|---|---|---|---|---|---|
+| 2 | 326 | 66 | 458 | `d=170`, `d·2=340` | no |
+| 3 | 474 | −12 | **450** | `d=92`, `d·2=184` | **yes** |
+| 4 | 296 | 50 | **396** | `d=154`, `d·2=308` | no |
+
+The deque evicts the back whenever the newcomer's key is no larger:
+
+```
+  add 2  ->  [2]                     key 458
+  add 3  ->  450 <= 458, pop 2       A[3] = -12 < A[2] = 66   newcomer fits MORE easily -- safe
+  add 4  ->  396 <= 450, pop 3       A[4] =  50 > A[3] = -12  newcomer fits LESS easily -- UNSAFE
+```
+
+The front is now start 4, whose route is `308 > 200`. It is skipped as infeasible, the deque is
+exhausted, and layer 2 yields nothing — so `p[5]` never gets a label.
+
+Start 3 was feasible at `184`, and `p[3] + 184 = 474 + 184 = 658` is the optimum. It was discarded by
+a start that is **cheaper on paper and does not fit**. The key ranks on cost alone; feasibility is
+not in it. Under the triangle inequality that never matters, because a later start always fits at
+least as easily. Here it does not.
+
 Reproduce:
+
+```bash
+for s in PTVRP_CONT PTVRP_CONT_FIX PTVRP_LAYERED_CONT_FIX; do
+  echo -n "$s "
+  Program/split Instances/Counterexamples/ce_unsafe_pop_5v.gt -solver $s 2>&1 \
+    | grep -oE "SOLUTION COST : [0-9.]+|UNSAFE POPS : [0-9]+|no Split solution"; echo
+done
+```
+
+Reproduce the 60-instance sweep:
 
 ```bash
 for s in PTVRP_CONT PTVRP_CONT_FIX PTVRP_LAYERED_CONT_FIX; do
