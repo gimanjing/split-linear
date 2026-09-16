@@ -353,6 +353,56 @@ All five solvers, one machine, all 3,150 instances:
 This supersedes §5.2's "the frontier is worth 12× and it is the unsound part". The correct statement
 is: *the frontier is worth 12×, and a sound frontier recovers it for 18%.*
 
+### 6.4 Head-to-head rerun: the sound frontier against the unsound one
+
+§6.3 reads the two solvers off separate sweeps. This is the direct comparison: both solvers on the
+same instance in the same process, `PTVRP_LAYERED_CONT_FIX` first so `gap_vs_first` is the unsound
+decoder's error against the sound one. 6,300 rows in `sweep_layered_vs_contfix.csv`, 34 s wall on the
+machine in §11, three folders in parallel.
+
+| | result |
+|---|---|
+| identical cost | **3,150 / 3,150** (2,829 feasible, 321 infeasible) |
+| `gap_vs_first` non-zero | **0 rows** |
+| `PTVRP_LAYERED_CONT_FIX` vs the `PTVRP_CONT` oracle | **3,150 / 3,150** identical |
+| `UNSAFE POPS` | 0 everywhere |
+
+**What soundness costs, measured side by side: 1.08× overall** (39.6 s against 36.7 s). The ratio
+grows with instance size, because at small `n` both runs are a few milliseconds and process startup
+dominates:
+
+| size | `..._CONT_FIX` | `PTVRP_LAYERED` | ratio |
+|---|---|---|---|
+| n < 500 (1,380) | 7.9 s | 8.1 s | 0.96× |
+| 500 – 2,000 (780) | 6.3 s | 6.2 s | 1.02× |
+| 2,000 – 10,000 (600) | 9.6 s | 8.8 s | 1.10× |
+| n >= 10,000 (390) | 15.8 s | 13.6 s | **1.16×** |
+
+Per-instance medians at `n >= 3,000` are 1.18× at `Q = 10`, 1.19× at `Q = 20` and 1.23× at `Q = 100`,
+falling to 1.0–1.1× above that. So **§6.3's 1.18× is the right figure for instances where the work is
+real**, and the 1.08× total is diluted by the 2,160 instances that finish in milliseconds. Quote the
+per-size number, not the total.
+
+The source of the difference is unchanged from §6.1 — the sound frontier bounds the layer count
+slightly less tightly:
+
+| | median `eff_K` | mean | max | median `K_allocated` |
+|---|---|---|---|---|
+| `PTVRP_LAYERED_CONT_FIX` | **17.3** | 25.5 | 135 | 33 |
+| `PTVRP_LAYERED` | **15.0** | 21.5 | 127 | 27 |
+
+One caveat on that comparison: `PTVRP_LAYERED` throws before printing its diagnostics on the 321
+infeasible instances, so its `eff_K` statistics cover 2,829 instances against the fixed solver's
+3,150.
+
+Counters on this run: revived layer winners on **20** instances, 2 improving a label, 0 answers
+changed; `INFEASIBLE SKIPS` 60.9 M across 2,653 instances — three orders of magnitude below the
+33.0 × 10⁹ of the unbounded control in §5.5, which is the bound doing its work. The 20 instances
+against §4.1's 18 for `PTVRP_LAYERED_CONT` is a small unexplained difference: the two solvers replay
+the frontier under different layer bounds, so they do not have to agree, but it has not been checked.
+
+The slowest single run is 0.13 s (`ch71009`, n = 71,008), against 117 s for the unbounded control.
+
 ---
 
 ## 7. Summary
@@ -608,9 +658,37 @@ for d in 1 2 3; do
 done; wait
 head -1 lc_1.csv > sweep_PTVRP_LAYERED_CONT.csv
 for d in 1 2 3; do tail -n +2 lc_$d.csv >> sweep_PTVRP_LAYERED_CONT.csv; done
+
+# the head-to-head of §6.4 (~34 s) -- the sound frontier against the unsound one,
+# both solvers on the same instance, so gap_vs_first is the error of the second
+for d in 1 2 3; do
+  python3 batch_run.py --dir "Instances/Instances $d" \
+      --solver PTVRP_LAYERED_CONT_FIX PTVRP_LAYERED --timeout 1800 --out cf_$d.csv &
+done; wait
+head -1 cf_1.csv > sweep_layered_vs_contfix.csv
+for d in 1 2 3; do tail -n +2 cf_$d.csv >> sweep_layered_vs_contfix.csv; done
 ```
 
-Timing note: this sweep ran three processes in parallel on 8 threads under WSL2. The other solvers'
-seconds come from the earlier sweep in commit `5049f5b`. Treat the ratios in §5.3 as indicative to
-within tens of percent, not exact. Every conclusion above rests on ratios of 5× or more, or on cost
-agreement, not on small timing differences.
+---
+
+## 11. Machine and environment
+
+Every timing in this file comes from one machine:
+
+| | |
+|---|---|
+| CPU | **Intel Core i7-9700K @ 3.60 GHz**, 8 cores / 8 threads (no SMT) |
+| RAM | 16 GB host; ~7 GB visible to the VM |
+| OS | Windows 11 Pro 22621, WSL2 Ubuntu, kernel 6.18.33.2-microsoft-standard-WSL2 |
+| compiler | g++ (Ubuntu) 15.2.0, `-O3` |
+| harness | `batch_run.py`, one process per instance folder, three folders in parallel |
+
+Three parallel processes on 8 threads leave the cores oversubscribed only by memory bandwidth, not by
+count, but the runs are not isolated: an instance timed alongside two others is slower than the same
+instance timed alone. Single-instance measurements quoted in the text (§5.1's 21 ns per layer visit,
+§6.4's slowest run) were taken with nothing else running.
+
+Timing note, carried forward: the solver seconds in §5.3's table come from the earlier sweep in commit
+`5049f5b`, which ran under the same setup but not in the same session. Treat those ratios as
+indicative to within tens of percent. Every conclusion in this file rests on ratios of 5× or more, on
+the same-process comparison of §6.4, or on cost agreement — not on small timing differences.
