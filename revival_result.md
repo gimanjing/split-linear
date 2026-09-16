@@ -359,7 +359,122 @@ is: *the frontier is worth 12×, and a sound frontier recovers it for 18%.*
 
 ---
 
-## 8. Open, following from this
+## 8. Where the fix stops being unconditional
+
+The path-out bound is instance-independent by construction, so it was worth testing on data that
+breaks the triangle inequality *structurally* rather than by one rounding unit -- what a
+time-dependent travel model, depot waiting times, or driver-hours rules would produce.
+
+`Instances/Counterexamples/structural_violation.gt` is such an instance: legs home drawn
+independently of the inter-vendor arcs, so **46% of positions violate the triangle inequality, by a
+median of 156 units and up to 482**. TSPLIB violations are always exactly 1.
+
+Over 60 instances of that kind:
+
+| | result |
+|---|---|
+| instances with `UNSAFE POPS` > 0 | **60 / 60** (5,304 pops) |
+| `PTVRP_CONT_FIX` wrong | **0 / 60** |
+| `PTVRP_LAYERED_CONT_FIX` wrong | **1 / 60** (oracle 88,554, returned 88,909) |
+
+**The Bellman fix is unconditional.** Its only assumption is the path-out bound, which is arithmetic
+-- append a non-negative leg, remove nothing -- and holds however the leg is priced.
+
+**The layered fix is not -- and the defect is inherited, not introduced.** On the failing instance
+`PTVRP_LAYERED_CONT` returns the *same* wrong answer (88,909) despite having no path-out bound at
+all, while fully-unsound `PTVRP_LAYERED` returns 97,017 against the true 88,554. So the bound changed
+the speed, not the answer: it removes 96% of the error (9.56% -> 0.40%) and cannot remove the rest.
+
+The residue is the deque's key-only back-pop, shared by every layered solver here: an older start is discarded
+when a newer one has a key at least as small, which is safe for feasibility only if the newer start
+also fits the horizon whenever the older does, i.e. `At[new] <= At[old]`. That needs `At`
+non-increasing, which needs the triangle inequality. Rounding never triggered it -- **zero across all
+3,150 benchmark instances**. Structural violations trigger it on every instance, and occasionally
+decisively.
+
+`UNSAFE POPS` fired on the failing instance -- 78 in the fixed solver, 103 in the unbounded control
+-- so the counter is a working alarm rather than a decoration, and §3's exactness certificate
+correctly declines to certify there. The certificate was always conditional on that counter being
+zero; this is the instance showing the condition is load-bearing. Three ways to use it:
+
+1. **Prefer `PTVRP_CONT_FIX`** wherever duration is not a function of distance. It carries no deque
+   and no such assumption.
+2. **Treat `UNSAFE POPS > 0` as a fallback trigger** -- rerun that instance on the Bellman fix.
+3. **Make the back-pop feasibility-aware** -- only evict when `At[new] <= At[old]` as well as on key.
+   Not yet implemented, and it would cost deque length, so it needs measuring.
+
+### 8.1 A five-vendor instance where the back-pop loses the answer
+
+`Instances/Counterexamples/ce_unsafe_pop_5v.gt`. Small enough to check by hand, and the failure is
+the worst kind: **`NO SOLUTION` on an instance that is feasible at 658.**
+
+```
+CAPACITY 10   MAX_ROUTE 200
+
+  vendor   demand   home   to next
+       1        5     79         1
+       2       11     42         7
+       3        2     74        12
+       4        7      8         7
+       5       11     77         -
+```
+
+| solver | result |
+|---|---|
+| `PTVRP`, `PTVRP_CONT`, `PTVRP_CONT_FIX`, `PTVRP_LAYERED` | **658** (exhaustive enumeration agrees) |
+| `PTVRP_LAYERED_CONT`, `PTVRP_LAYERED_CONT_FIX` | **NO SOLUTION**, `UNSAFE POPS` = 1 |
+
+The deque ranks starts by `key(i,k) = p[i] + k·A[i]`, where `A[i] = d(v_{i+1},depot) − path(v_1..v_{i+1})`.
+The triangle inequality would force `A` to be non-increasing. Here it is not: `A = [79, 41, 66, −12, 50]`,
+violated at `i=2` and again at `i=4`.
+
+At column `j=5`, layer `k=2` holds the starts needing exactly two trips:
+
+| start | `p[i]` | `A[i]` | key | its route | fits `T_H = 200`? |
+|---|---|---|---|---|---|
+| 2 | 326 | 66 | 458 | `d=170`, `d·2=340` | no |
+| 3 | 474 | −12 | **450** | `d=92`, `d·2=184` | **yes** |
+| 4 | 296 | 50 | **396** | `d=154`, `d·2=308` | no |
+
+The deque evicts the back whenever the newcomer's key is no larger:
+
+```
+  add 2  ->  [2]                     key 458
+  add 3  ->  450 <= 458, pop 2       A[3] = -12 < A[2] = 66   newcomer fits MORE easily -- safe
+  add 4  ->  396 <= 450, pop 3       A[4] =  50 > A[3] = -12  newcomer fits LESS easily -- UNSAFE
+```
+
+The front is now start 4, whose route is `308 > 200`. It is skipped as infeasible, the deque is
+exhausted, and layer 2 yields nothing — so `p[5]` never gets a label.
+
+Start 3 was feasible at `184`, and `p[3] + 184 = 474 + 184 = 658` is the optimum. It was discarded by
+a start that is **cheaper on paper and does not fit**. The key ranks on cost alone; feasibility is
+not in it. Under the triangle inequality that never matters, because a later start always fits at
+least as easily. Here it does not.
+
+Reproduce:
+
+```bash
+for s in PTVRP_CONT PTVRP_CONT_FIX PTVRP_LAYERED_CONT_FIX; do
+  echo -n "$s "
+  Program/split Instances/Counterexamples/ce_unsafe_pop_5v.gt -solver $s 2>&1 \
+    | grep -oE "SOLUTION COST : [0-9.]+|UNSAFE POPS : [0-9]+|no Split solution"; echo
+done
+```
+
+Reproduce the 60-instance sweep:
+
+```bash
+for s in PTVRP_CONT PTVRP_CONT_FIX PTVRP_LAYERED_CONT_FIX; do
+  echo -n "$s "
+  Program/split Instances/Counterexamples/structural_violation.gt -solver $s 2>&1 \
+    | grep -oE "SOLUTION COST : [0-9.]+|UNSAFE POPS : [0-9]+" | tr '\n' ' '; echo
+done
+```
+
+---
+
+## 9. Open, following from this
 
 - **Split the 85-instance gap (§4.1).** Count *every* feasible start behind the replayed frontier, not
   only layer winners. That separates "different pointer" from "not the winner".
@@ -377,7 +492,7 @@ is: *the frontier is worth 12×, and a sound frontier recovers it for 18%.*
 
 ---
 
-## 9. Reproducing
+## 10. Reproducing
 
 ```bash
 cd Program && make && cd ..

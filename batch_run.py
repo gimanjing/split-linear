@@ -21,7 +21,7 @@ import argparse, csv, glob, os, random, re, subprocess, sys, time
 FIELDS = ["instance", "n", "Q", "horizon", "solver", "cost", "templates", "max_m",
           "seconds", "K_full_tour", "K_allocated", "max_layer_used", "layer_iterations",
           "eff_K", "revived_arcs", "revived_starts", "revived_improving", "infeasible_skips",
-          "unsafe_pops", "gap_vs_first"]
+          "unsafe_pops", "blocked_pops", "unsorted_queries", "gap_vs_first"]
 
 
 def read_header(path):
@@ -69,6 +69,10 @@ def run_one(binary, path, solver, timeout):
         # PTVRP_LAYERED_CONT only : deque entries stepped over on time, and back-pops not provably safe
         "infeasible_skips": grab(r"INFEASIBLE SKIPS : (\d+)", int),
         "unsafe_pops": grab(r"UNSAFE POPS : (\d+)", int),
+        # PTVRP_LAYERED_SAFE only : evictions the joint-dominance guard refused, and the
+        # columns where a layer therefore had to scan instead of taking its front
+        "blocked_pops": grab(r"BLOCKED POPS : (\d+)", int),
+        "unsorted_queries": grab(r"UNSORTED QUERIES : (\d+)", int),
         "revived_improving": grab(r"REVIVED IMPROVING : (\d+)", int),
     }
     if row["cost"] == "":
