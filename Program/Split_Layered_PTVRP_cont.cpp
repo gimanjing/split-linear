@@ -1,7 +1,7 @@
 //--------------------------------------------------------
 //LAYERED-K SPLIT FOR THE PT-VRP, NO HORIZON PRUNING
 //Extends the LIBRARY OF SPLIT ALGORITHM FOR VEHICLE ROUTING PROBLEMS (Thibaut VIDAL, 2015)
-//See Split_Layered_PTVRP_cont.h : the layer structure is kept, the two one-way pointers are not.
+//See Split_Layered_PTVRP_cont.h : the layers and their deques are kept, the two one-way time pointers are not.
 //--------------------------------------------------------
 
 #include "Split_Layered_PTVRP_cont.h"
@@ -17,8 +17,6 @@ int Split_Layered_PTVRP_cont::solve()
 	predK = vector <int> (n+1, 0) ;
 	sumDistance = vector <double> (n+1, 0) ;
 	sumLoad = vector <double> (n+1, 0) ;
-	revivedStarts = 0 ;
-	revivedImproving = 0 ;
 
 	for (int i = 1 ; i <= n ; i++)
 	{
@@ -43,77 +41,166 @@ int Split_Layered_PTVRP_cont::solve()
 		Bt[j] = B[j] / speed + PTVRP_SERVICE_TIME * (double) j ;
 	}
 
-	// Where Split_Layered_PTVRP's one-way frontier would stand. Tracked only to count the starts the
-	// pruning would have thrown away; it never restricts the scan below.
-	int monotoneFrontier = 0 ;
+	monotonicityViolations = 0 ;
+	for (int i = 0 ; i + 1 < n ; i++)
+		if (At[i+1] > At[i] + 1.e-9) monotonicityViolations ++ ;
+	for (int j = 1 ; j < n ; j++)
+		if (Bt[j+1] < Bt[j] - 1.e-9) monotonicityViolations ++ ;
+
+	layersFullTour = trips(0, n) ;
+
+	// Load windows and deques exactly as in Split_Layered_PTVRP. Containers grow on demand.
+	vector <int> firstLoadLE (2, 0) ;
+	vector < deque<int> > queues (2) ;
+	vector <int> nextAdd (2, 0) ;
+
+	// Split_Layered_PTVRP's two time pointers, replayed for counting only. They never restrict the DP.
+	int shadowFeasible = 0 ;
+	vector <int> shadowTimeLE (2, 0) ;
+
+	maxLayerUsed = 0 ;
+	layerIterations = 0 ;
+	infeasibleSkips = 0 ;
+	unsafePops = 0 ;
+	revivedStarts = 0 ;
+	revivedImproving = 0 ;
 
 	if (myData->trace)
-		cout << endl << "=== LAYERED, NO HORIZON PRUNING : every start scanned, feasibility tested one by one ===" << endl
-			 << "    the layer partition by trip count is kept -- it is load-based and always monotone" << endl ;
+		cout << endl << "=== LAYERED, NO HORIZON PRUNING : one deque per trip count, infeasible starts stepped over, never dropped ===" << endl
+			 << "    evicted only when the load window leaves them behind, or a newer start has a key at least as small" << endl ;
 
 	for (int j = 1 ; j <= n ; j++)
 	{
-		while (monotoneFrontier < j
-		       && (At[monotoneFrontier] + Bt[j]) * (double) trips(monotoneFrontier, j) > horizon + 1.e-9)
-			monotoneFrontier ++ ;
+		while (shadowFeasible < j
+		       && (At[shadowFeasible] + Bt[j]) * (double) trips(shadowFeasible, j) > horizon + 1.e-9)
+			shadowFeasible ++ ;
+		int shadowKHi = (shadowFeasible < j) ? trips(shadowFeasible, j) : 0 ;
 
-		// Deepest layer any start could need. No frontier bound : the whole prefix is in scope.
+		// No frontier, so no horizon bound : the deepest layer is the one the whole prefix needs.
 		int kHi = trips(0, j) ;
 
 		if (myData->trace)
-			cout << endl << "  +-- p[" << j << "] : scanning starts [0," << j << "), layers 1.." << kHi
-				 << "   (pruned solver would start at " << monotoneFrontier << ")" << endl ;
+			cout << endl << "  +-- p[" << j << "] : layers 1.." << kHi
+				 << "   (pruned solver : feasible starts begin at " << shadowFeasible << ", layers 1.." << shadowKHi << ")" << endl ;
+
+		if (kHi + 1 > (int) queues.size())
+		{
+			int grown = kHi + 2 ;
+			firstLoadLE.resize(grown + 1, 0) ;
+			shadowTimeLE.resize(grown + 1, 0) ;
+			queues.resize(grown) ;
+			nextAdd.resize(grown, 0) ;
+		}
 
 		for (int k = 1 ; k <= kHi ; k++)
 		{
-			int bestI = -1 ;
-			double bestCand = 1.e30 ;
+			layerIterations ++ ;
 
-			for (int i = 0 ; i < j ; i++)
+			// starts needing exactly k trips : [firstLoadLE[k], firstLoadLE[k-1]), with j closing k = 1
+			while (firstLoadLE[k] < j && trips(firstLoadLE[k], j) > k)
+				firstLoadLE[k] ++ ;
+
+			int lower = firstLoadLE[k] ;
+			int upper = (k == 1) ? j : firstLoadLE[k-1] ;
+			if (lower >= upper)
+				continue ;
+
+			// Where the pruned solver's window for this layer would begin; j when it would not visit the layer.
+			int shadowLower = j ;
+			if (k <= shadowKHi)
 			{
-				if (trips(i, j) != k) continue ;        // layer membership : load-based, always exact
-				if (potential[i] > 1.e29) continue ;
-
-				double tau = At[i] + Bt[j] ;
-				if (tau * (double) k > horizon + 1.e-9) continue ;   // tested per start, never pruned
-
-				double cand = potential[i] + (double) k * (A[i] + B[j]) ;
-
-				if (i < monotoneFrontier)
-				{
-					revivedStarts ++ ;
-					if (cand < potential[j]) revivedImproving ++ ;
-				}
-				if (cand < bestCand) { bestCand = cand ; bestI = i ; }
+				double timeBound = horizon / (double) k - Bt[j] ;
+				while (shadowTimeLE[k] < j && At[shadowTimeLE[k]] > timeBound + 1.e-9)
+					shadowTimeLE[k] ++ ;
+				shadowLower = shadowTimeLE[k] ;
 			}
 
-			if (bestI < 0) continue ;
+			deque<int> & dq = queues[k] ;
+
+			while (!dq.empty() && dq.front() < lower)
+				dq.pop_front() ;
+
+			if (nextAdd[k] < lower)
+				nextAdd[k] = lower ;
+
+			while (nextAdd[k] < upper)
+			{
+				int i = nextAdd[k] ;
+				nextAdd[k] ++ ;
+				if (potential[i] > 1.e29)
+					continue ;
+				double ki = key(i, k) ;
+				// on ties keep the newer predecessor, matching Split_Layered_PTVRP
+				while (!dq.empty() && key(dq.back(), k) >= ki)
+				{
+					// the evicted start fits the horizon more easily than its replacement : not provably safe
+					if (At[i] > At[dq.back()] + 1.e-9)
+						unsafePops ++ ;
+					dq.pop_back() ;
+				}
+				dq.push_back(i) ;
+			}
+
+			// First start from the front that fits the horizon at k trips. Nothing is popped on time.
+			int front = -1 ;
+			for (size_t q = 0 ; q < dq.size() ; q++)
+			{
+				if ((At[dq[q]] + Bt[j]) * (double) k <= horizon + 1.e-9)
+				{
+					front = dq[q] ;
+					break ;
+				}
+				infeasibleSkips ++ ;
+			}
+
+			if (front < 0)
+				continue ;
+
+			double cand = key(front, k) + (double) k * B[j] ;
+			bool behind = (front < shadowLower) ;
+			if (behind)
+			{
+				revivedStarts ++ ;
+				if (cand < potential[j]) revivedImproving ++ ;
+			}
 
 			if (myData->trace)
-				cout << "  |  layer k=" << k << " : best start " << bestI
-					 << "   cand = p[" << bestI << "] + " << k << "*d(" << bestI << "," << j << ")"
-					 << " = " << bestCand
-					 << (bestI < monotoneFrontier ? "   [behind the frontier]" : "")
-					 << ((bestCand < potential[j]) ? "   <- best so far" : "") << endl ;
-
-			if (bestCand < potential[j])
 			{
-				potential[j] = bestCand ;
-				pred[j] = bestI ;
+				cout << "  |  layer k=" << k << " : starts [" << lower << "," << upper << ")  deque [ " ;
+				for (size_t q = 0 ; q < dq.size() ; q++) cout << dq[q] << " " ;
+				cout << "]  first feasible=" << front
+					 << "   cand = p[" << front << "] + " << k << "*d(" << front << "," << j << ")"
+					 << " = " << cand
+					 << (behind ? "   [behind the frontier]" : "")
+					 << ((cand < potential[j]) ? "   <- best so far" : "") << endl ;
+			}
+
+			if (cand < potential[j])
+			{
+				potential[j] = cand ;
+				pred[j] = front ;
 				predK[j] = k ;
+				if (k > maxLayerUsed) maxLayerUsed = k ;
 			}
 		}
-
-		if (myData->trace && pred[j] >= 0)
-			cout << "  +-- p[" << j << "] = " << potential[j] << "  (predecessor " << pred[j]
-				 << ", layer " << predK[j] << ")" << endl ;
 	}
 
+	// Diagnostics go out before the feasibility check so an infeasible instance still reports them.
+	cout << endl ;
+	cout << "K FULL TOUR          : " << layersFullTour << "   (ceil(total demand / Q), the naive layer count)" << endl ;
+	cout << "LAYERS ALLOCATED (K) : " << layersFullTour << "   (no horizon bound : every layer the prefix needs)" << endl ;
+	cout << "MAX LAYER USED       : " << maxLayerUsed << "   (largest k that improved any label)" << endl ;
+	cout << "LAYER ITERATIONS     : " << layerIterations << "   (the work actually done; effective K = "
+		 << (double) layerIterations / (double) n << " per column)" << endl ;
+	cout << "INFEASIBLE SKIPS : " << infeasibleSkips << endl ;
+	cout << "UNSAFE POPS : " << unsafePops << endl ;
 	// A revived start that improves a label is necessary, not sufficient, for the pruning to change the
-	// answer : a later start may improve the same label further. Compare SOLUTION COST against
-	// PTVRP_LAYERED to decide.
+	// answer : a later layer may improve the same label further. Compare SOLUTION COST against PTVRP_LAYERED.
 	cout << "REVIVED STARTS : " << revivedStarts << endl ;
 	cout << "REVIVED IMPROVING : " << revivedImproving << endl ;
+	if (monotonicityViolations > 0)
+		cout << "WARNING : " << monotonicityViolations
+			 << " positions break the monotonicity the pruned solver's pointers assume (rounded distances)" << endl ;
 
 	if (potential[n] > 1.e29)
 	{
@@ -134,18 +221,23 @@ int Split_Layered_PTVRP_cont::solve()
 	myData->solutionTemplateTime  = vector <double> (myData->solutionNbRoutes) ;
 	myData->solutionTemplateTrips = vector <int> (myData->solutionNbRoutes) ;
 
+	maxLayerOnPath = 0 ;
 	cour = n ;
 	for (int i = myData->solutionNbRoutes-1 ; i >= 0 ; i--)
 	{
-		int p = pred[cour] ;
-		myData->solutionTemplateDist[i]  = A[p] + B[cour] ;
-		myData->solutionTemplateTime[i]  = (At[p] + Bt[cour]) ;
-		myData->solutionTemplateTrips[i] = predK[cour] ;
-		cour = p ;
+		int endNode = cour ;
+		int k = predK[cour] ;
+		cour = pred[cour] ;
 		myData->solution[i] = cour+1 ;
+		myData->solutionTemplateDist[i]  = A[cour] + B[endNode] ;
+		myData->solutionTemplateTime[i]  = At[cour] + Bt[endNode] ;
+		myData->solutionTemplateTrips[i] = k ;
+		if (k > maxLayerOnPath) maxLayerOnPath = k ;
 	}
 
 	myData->solutionCost = potential[n] ;
+
+	cout << "MAX LAYER ON PATH    : " << maxLayerOnPath << "   (largest m(sigma) in the solution)" << endl ;
 
 	return 0 ;
 }

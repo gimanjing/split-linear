@@ -33,7 +33,7 @@ Then:
 | `PTVRP_LINEAR` | Vidal's deque applied to PT-VRP anyway. **Deliberately wrong**, kept to measure the error |
 | `PTVRP_LAYERED` | one deque per trip count, `O(nK)`. Exact |
 | `PTVRP_CONT` | Bellman with no early stop, `O(n^2)`. Control for `revival.md` |
-| `PTVRP_LAYERED_CONT` | layers kept, horizon pruning dropped, `O(n^2K)`. Control for `revival.md` |
+| `PTVRP_LAYERED_CONT` | layers and deques kept, horizon pruning dropped, `O(n·K_full)`. Control for `revival.md`, results in `revival_result.md` |
 
 ## Learning the three PT-VRP algorithms
 
