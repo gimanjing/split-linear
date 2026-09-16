@@ -380,15 +380,22 @@ Over 60 instances of that kind:
 **The Bellman fix is unconditional.** Its only assumption is the path-out bound, which is arithmetic
 -- append a non-negative leg, remove nothing -- and holds however the leg is priced.
 
-**The layered fix is not.** It retains the deque's key-only back-pop: an older start is discarded
+**The layered fix is not -- and the defect is inherited, not introduced.** On the failing instance
+`PTVRP_LAYERED_CONT` returns the *same* wrong answer (88,909) despite having no path-out bound at
+all, while fully-unsound `PTVRP_LAYERED` returns 97,017 against the true 88,554. So the bound changed
+the speed, not the answer: it removes 96% of the error (9.56% -> 0.40%) and cannot remove the rest.
+
+The residue is the deque's key-only back-pop, shared by every layered solver here: an older start is discarded
 when a newer one has a key at least as small, which is safe for feasibility only if the newer start
 also fits the horizon whenever the older does, i.e. `At[new] <= At[old]`. That needs `At`
 non-increasing, which needs the triangle inequality. Rounding never triggered it -- **zero across all
 3,150 benchmark instances**. Structural violations trigger it on every instance, and occasionally
 decisively.
 
-`UNSAFE POPS` fired (78) on the failing instance, so the counter is a working alarm rather than a
-decoration. Three ways to use it:
+`UNSAFE POPS` fired on the failing instance -- 78 in the fixed solver, 103 in the unbounded control
+-- so the counter is a working alarm rather than a decoration, and §3's exactness certificate
+correctly declines to certify there. The certificate was always conditional on that counter being
+zero; this is the instance showing the condition is load-bearing. Three ways to use it:
 
 1. **Prefer `PTVRP_CONT_FIX`** wherever duration is not a function of distance. It carries no deque
    and no such assumption.
