@@ -5,11 +5,19 @@ Vidal's Split library, extended with the Periodic-Template VRP (PT-VRP), where a
 executed `m(sigma) = ceil(q(sigma)/Q)` times over a horizon, so its cost is `d(sigma)*m(sigma)` and
 its duration `tau(sigma)*m(sigma)` must fit `T_H`.
 
-**`revival.md`** is the step-by-step explanation of one specific finding: the early stop used by
+**`revival.md`** is the step-by-step explanation of one specific finding: the pruning used by
 time-constrained Split is unsound, with worked traces on a 10-vendor instance and on the
 counterexamples. Start there if you want the mechanism rather than the survey.
-`revival_result.md` carries the full-benchmark results and the fix: stopping on the route *without*
-the leg home is sound with no assumption about the instance, and costs 1.13x.
+`revival_result.md` carries the full-benchmark results.
+
+The short version. Every decoder here prunes on *duration*, and justifies the pruning with the
+triangle inequality, which is a property of *distance*. The two agree only when duration is one fixed
+function of distance. Independent integer rounding already breaks that by one unit — enough to make
+the pruning return a wrong answer, and enough to return `NO SOLUTION` on a feasible instance. Anything
+a real duration model adds — travel time that varies by hour, queueing at the depot, driver-hours,
+one-way networks — breaks it without bound. **Two repairs, both implemented and measured:** prune on
+the route *without* the leg home (1.13x), and evict from the deque only on joint dominance (free).
+Together they leave no assumption about the instance.
 
 **`NOTES.md`** is the research write-up: why Vidal's linear Split does not apply here, what
 replaces it, the full measurements, the lines of attack that failed, and what is still open.
@@ -28,14 +36,25 @@ Then:
 ./split <instance> -solver <SOLVER> [-trace 1]
 ```
 
+**Use `PTVRP_CONT_FIX` or `PTVRP_LAYERED_SAFE`.** Those are the two sound solvers. Everything else is
+kept as a baseline to measure against, a control, or a deliberate error — including `PTVRP` and
+`PTVRP_LAYERED`, which give wrong answers on the counterexamples.
+
 | solver | what it is |
 |---|---|
-| `BELLMAN`, `LINEAR`, and the `_SOFT` / `_BOUNDED` variants | Vidal's original CVRP solvers, unchanged |
-| `PTVRP` | exact PT-VRP DP, `O(nB)`. The reference answer |
+| `BELLMAN`, `LINEAR`, and the `_SOFT` / `_BOUNDED` variants | Vidal's original CVRP solvers, unchanged. Not affected by any of the below — every guard in them is load-based |
+| **`PTVRP_CONT_FIX`** | **Bellman stopping on the path out, `O(nB)`. Sound with no assumption about the instance. Use this** |
+| **`PTVRP_LAYERED_SAFE`** | **layers, path-out frontier, joint-dominance eviction, `O(nK)`. Sound with no assumption about the instance. Use this** |
+| `PTVRP` | PT-VRP DP stopping on the full route, `O(nB)`. **Unsound** — the original reference answer, wrong on all four counterexamples |
+| `PTVRP_LAYERED` | one deque per trip count, `O(nK)`. **Unsound frontier** — wrong on three of the four |
 | `PTVRP_LINEAR` | Vidal's deque applied to PT-VRP anyway. **Deliberately wrong**, kept to measure the error |
-| `PTVRP_LAYERED` | one deque per trip count, `O(nK)`. Exact |
-| `PTVRP_CONT` | Bellman with no early stop, `O(n^2)`. Control for `revival.md` |
+| `PTVRP_CONT` | Bellman with no early stop, `O(n^2)`. The **oracle** — assumes nothing, ~20x slower |
 | `PTVRP_LAYERED_CONT` | layers and deques kept, horizon pruning dropped, `O(n·K_full)`. Control for `revival.md`, results in `revival_result.md` |
+| `PTVRP_LAYERED_CONT_FIX` | layers plus a path-out frontier, `O(nK)`. Sound pruning, but the eviction still assumes the triangle inequality — superseded by `PTVRP_LAYERED_SAFE` |
+
+The two sound solvers cost 1.13x and 1.18x over their unsound counterparts, and both stay about 20x
+faster than `PTVRP_CONT`. `PTVRP_CONT_FIX` carries no deque and so no assumption at all;
+`PTVRP_LAYERED_SAFE` reaches the same place with a guarded eviction that never fires on metric data.
 
 ## Learning the three PT-VRP algorithms
 
@@ -162,5 +181,10 @@ instance set.
 - `Instances/Instances 2/`, `Instances 3/` — the same instances at `Q=20` and `Q=10`. Many vendors
   there have `q_i > Q`, so classic Split cannot solve them at all while PT-VRP can.
 - `Instances/ptvrp_demo_5v.gt` — the 5-vendor worked example used above.
+- `Instances/Counterexamples/` — small instances where the unsound solvers give wrong answers.
+  `ce_rounding`, `ce_blatant`, `ce_multiplier`, `ce_infeasible` are `n = 3` and defeat the pruning;
+  `ce_unsafe_pop_5v` is `n = 5` and defeats the deque eviction; `structural_violation.gt` breaks the
+  triangle inequality at 46% of positions rather than by one rounding unit. All verified against
+  exhaustive enumeration. See `revival.md`.
 
 Service time is fixed at `PTVRP_SERVICE_TIME` in `Program/Pb_Data.h`; the instance files carry none.

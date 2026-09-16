@@ -15,8 +15,15 @@ route ending at `j` is `depot -> v1 -> ... -> vj -> depot`, i.e. the running pre
 ```
 
 — going straight home costs more than stopping at the next vendor and going home from there. In real
-geometry that is impossible. TSPLIB rounds every distance to a whole number independently, and the
+*geometry* that is impossible. TSPLIB rounds every distance to a whole number independently, and the
 rounding makes it true by one unit.
+
+**Scope.** This file is about rounding only, and every "always exactly 1" below is a fact about
+TSPLIB, not about the defect. Rounding is the *smallest* way the condition above can hold; it holds
+without bound whenever duration is not a fixed function of distance — hourly traffic, queueing at the
+depot, driver-hours, one-way networks. See `revival.md` §1.1 for the full ladder and
+`revival_result.md` §8 for measurements on data that breaks the inequality structurally, where the
+violations run to a median of 156 units instead of 1.
 
 ---
 
