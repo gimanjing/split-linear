@@ -21,7 +21,8 @@ import argparse, csv, glob, os, random, re, subprocess, sys, time
 FIELDS = ["instance", "n", "Q", "horizon", "solver", "cost", "templates", "max_m",
           "seconds", "K_full_tour", "K_allocated", "max_layer_used", "layer_iterations",
           "eff_K", "revived_arcs", "revived_starts", "revived_improving", "infeasible_skips",
-          "unsafe_pops", "blocked_pops", "unsorted_queries", "gap_vs_first"]
+          "unsafe_pops", "blocked_pops", "unsorted_queries", "arcs_scanned",
+          "arcs_unsound_stop", "gap_vs_first"]
 
 
 def read_header(path):
@@ -73,6 +74,9 @@ def run_one(binary, path, solver, timeout):
         # columns where a layer therefore had to scan instead of taking its front
         "blocked_pops": grab(r"BLOCKED POPS : (\d+)", int),
         "unsorted_queries": grab(r"UNSORTED QUERIES : (\d+)", int),
+        # PTVRP_CONT_FIX only : arcs the sound stop evaluates, and where the unsound stop would have ended
+        "arcs_scanned": grab(r"ARCS SCANNED : (\d+)", int),
+        "arcs_unsound_stop": grab(r"ARCS UNSOUND STOP : (\d+)", int),
         "revived_improving": grab(r"REVIVED IMPROVING : (\d+)", int),
     }
     if row["cost"] == "":

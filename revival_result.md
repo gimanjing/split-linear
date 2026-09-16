@@ -384,7 +384,7 @@ is: *the frontier is worth 12×, and a sound frontier recovers it for 18%.*
 
 ---
 
-## 8. Where the fix stops being unconditional
+## 8. Where the fix stopped being unconditional -- and how that was closed
 
 Everything above uses rounding as the source of the violation, because it is the cheapest witness:
 already present in the data, needing no modelling assumption to defend. It is also the **smallest**
