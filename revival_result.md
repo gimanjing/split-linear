@@ -254,43 +254,137 @@ they stay below one per layer visit at the median.
 
 ---
 
-## 6. Summary
+## 6. The bound comes back: `PTVRP_LAYERED_CONT_FIX`
+
+§5.2 concluded that the horizon frontier, not the layering, is what makes `PTVRP_LAYERED` fast — and
+that the frontier is the unsound part. That framing was right about the mechanism and wrong about the
+price. The frontier did not need to be unsound. It needed to prune on a different quantity.
+
+**Prune on the path out**, the route without the leg home:
+
+```
+    path_out(i,j) = A[i] + sumDistance[j]
+```
+
+`sumDistance[j]` is unconditionally non-decreasing — extending a template appends an arc and removes
+nothing, because the leg home is exactly what has been excluded. `Bt[j]` is not. Since
+`d(i,j) >= path_out(i,j)` and `trips(i,j)` only grows, `path_out(i,j)·trips(i,j) > T_H` proves every
+longer template from that start is infeasible for good. Revival lives entirely in the leg home, which
+this bound ignores, so it cannot escape it.
+
+So **both** one-way pointers come back, testing `Bout_t` instead of `Bt`:
+
+| | `PTVRP_LAYERED` | `PTVRP_LAYERED_CONT` | `..._CONT_FIX` |
+|---|---|---|---|
+| column frontier | `Bt` — unsound | removed | `Bout_t` — **sound** |
+| per-layer suffix `firstTimeLE[k]` | `Bt` — unsound | removed | `Bout_t` — **sound** |
+| feasibility at the deque front | pops on time | steps over, exact | steps over, exact |
+| layer bound | horizon | **none** (`K_full`) | horizon |
+
+Pruning is conservative; the feasibility test stays exact on the true route time.
+
+### 6.1 It is exact, and the bound is recovered
+
+All 3,150 instances against `PTVRP_CONT` (`sweep_both_fixes.csv`): **2,829 identical, 321
+both-infeasible, 0 disagreements, 0 `UNSAFE POPS`.**
+
+Median `eff_K`:
+
+| set | `CONT` (no bound) | **`FIX` (sound bound)** | `LAYERED` (unsound) |
+|---|---|---|---|
+| `Instances 1` | 4.0 | **2.0** | 1.9 |
+| `Instances 2` | 499.7 | **24.2** | 18.5 |
+| `Instances 3` | 998.9 | **30.2** | 29.2 |
+
+On `Instances 3` the sound bound cuts the layer count to **3.0%** of the unbounded version, landing
+within 3% of what the unsound frontier achieved.
+
+### 6.2 Bellman gets the same rule, in one line
+
+`PTVRP_CONT_FIX` (`Program/Split_Bellman_PTVRP_cont_fix.{h,cpp}`). The Bellman loop's running `time`
+already *is* the path out — the return leg only enters `tau_ij` — so:
+
+```cpp
+if (pathOut * m > myData->horizon + 1.e-9)
+    break ;
+```
+
+Its own counters give the price in arcs. Twelve largest instances per set, arcs scanned per start
+against where the unsound stop would have ended:
+
+| set | sound | unsound | overhead | no stop (`n/2`) |
+|---|---|---|---|---|
+| `Instances 1` | 518.2 | 463.4 | 1.12× | 35,504 |
+| `Instances 2` | 11.5 | 6.6 | 1.73× | 35,504 |
+| `Instances 3` | 6.5 | 3.8 | 1.72× | 35,504 |
+
+The ratio is worse where capacity is low, but the absolute numbers there are 6–12 arcs per start.
+
+### 6.3 What soundness actually costs
+
+All five solvers, one machine, all 3,150 instances:
+
+| solver | total | |
+|---|---|---|
+| `PTVRP_LAYERED` | 23.7 s | unsound frontier |
+| **`PTVRP_LAYERED_CONT_FIX`** | **28.0 s** | **exact** |
+| `PTVRP` | 34.0 s | unsound early stop |
+| **`PTVRP_CONT_FIX`** | **38.4 s** | **exact** |
+| `PTVRP_CONT` | 781.8 s | no stop — the oracle |
+| `PTVRP_LAYERED_CONT` | 4,041.5 s | unbounded control (your i7, ≈3,496 s here) |
+
+**1.18× for the layered decoder, 1.13× for Bellman.** Both about 20× faster than the oracle.
+
+This supersedes §5.2's "the frontier is worth 12× and it is the unsound part". The correct statement
+is: *the frontier is worth 12×, and a sound frontier recovers it for 18%.*
+
+---
+
+## 7. Summary
 
 1. **Correct.** Right on all four counterexamples. Identical to the exact `PTVRP_CONT` on all 3,150
    instances. With zero unsafe pops everywhere, it is exact by construction on this benchmark (§3).
 2. **Revival is real but never decisive here.** 18 instances have a layer won by a revived start,
    2 of those improve a label, and 0 change an answer. All 18 are inside Bellman's 103.
-3. **Cost is `Θ(n · K_full)`, measured.** Exponent 0.95, 21 ns per layer visit. Faster than Bellman's
-   `O(n²)` control for Q >= 200, slower for Q <= 100, where `K_full` exceeds `n`.
-4. **The frontier is worth 12× in `eff_K`.** The speed of `PTVRP_LAYERED` comes from the horizon
-   bound on the layer count. That is exactly the unsound part.
-5. **The remaining assumption is the back-pop.** It is counted (`UNSAFE POPS`) and never fired here.
-   An instance that fires it would be the first sign the layered control itself needs a fallback.
+3. **Without a bound, cost is `Θ(n · K_full)`, measured.** Exponent 0.95, 21 ns per layer visit.
+   Faster than Bellman's `O(n²)` control for Q >= 200, slower for Q <= 100, where `K_full` exceeds `n`.
+4. **The frontier is worth 12× in `eff_K` — and it need not be unsound.** Pruning on the path out
+   instead of the full route restores the bound with no assumption about the instance (§6). Median
+   `eff_K` on `Instances 3` goes 998.9 -> 30.2, against 29.2 for the unsound frontier.
+5. **Soundness costs 1.18× (layered) and 1.13× (Bellman)**, not the 169× the unbounded control needed.
+   Both remain ~20× faster than the oracle that assumes nothing (§6.3).
+6. **The remaining assumption is the back-pop.** It is counted (`UNSAFE POPS`) and never fired here,
+   in either the unbounded control or the fixed solver. `PTVRP_CONT_FIX` has no deque and carries no
+   such assumption at all.
 
 ---
 
-## 7. Open, following from this
+## 8. Open, following from this
 
 - **Split the 85-instance gap (§4.1).** Count *every* feasible start behind the replayed frontier, not
   only layer winners. That separates "different pointer" from "not the winner".
 - **Look for an instance with `UNSAFE POPS > 0`.** Construct one, in the style of `ce_rounding`, to show
   whether the back-pop can actually lose the answer or is only unprovable.
-- **A sound frontier would recover most of the 12×.** `revival.md` §9's suffix sum of violations
-  `D[j]` would make the stop exact. The layered version still has to be derived, because it prunes on
-  `At[i]`, not on a forward `tau`.
-- **Infeasible instances (§5.4).** Could a sound lower bound on time let the continuous control stop
-  on instances where nothing can ever fit?
+- **A sound frontier would recover most of the 12× — ANSWERED (§6).** Not by the suffix sum `D[j]`
+  that `revival.md` §9 first proposed, but by pruning on the path out, which needs nothing
+  precomputed and applies unchanged to both decoders. Measured at 1.18× and 1.13×.
+- **Infeasible instances (§5.4) — largely answered.** The path-out bound is exactly such a lower
+  bound on time, and it fires on instances where nothing can fit: the 321 infeasible instances now
+  cost the fixed solvers roughly what feasible ones do, instead of a full unbounded scan.
+- **Does the fix hold off this benchmark?** Every result here is `T_H = 86,400` and TSPLIB rounding.
+  The path-out argument is instance-independent by construction, so it should hold anywhere — but
+  "should" is not "measured". The two-horizon rerun (`NOTES.md` §7.3) would test it cheaply.
 
 ---
 
-## 8. Reproducing
+## 9. Reproducing
 
 ```bash
 cd Program && make && cd ..
 
 # counterexamples
 for f in Instances/Counterexamples/*.gt; do
-  for s in PTVRP PTVRP_CONT PTVRP_LAYERED PTVRP_LAYERED_CONT; do
+  for s in PTVRP PTVRP_CONT PTVRP_CONT_FIX PTVRP_LAYERED PTVRP_LAYERED_CONT_FIX; do
     echo -n "$(basename $f) $s "; Program/split "$f" -solver $s 2>&1 | grep -E "SOLUTION COST|no Split"
   done
 done
