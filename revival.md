@@ -2,14 +2,21 @@
 
 **What it is:** a route that does not fit the time limit, followed by a *longer* route that does.
 
+**When it happens:** whenever a route's duration is not a function of its distance — so the leg home
+can be priced independently of the two legs that replace it. Independent integer rounding is the
+cheapest example and is already present in every TSPLIB instance, but it is the *smallest* one.
+Traffic that varies by hour, queueing at the depot, driver-hours rules and one-way networks break the
+same assumption by far more than one unit (§1.1).
+
 **Why it matters:** every Split implementation that stops scanning at the first time-infeasible route
-assumes this cannot happen. On rounded instances it can, and the answer comes out wrong.
+assumes this cannot happen. When it can, the answer comes out wrong.
 
 **Who is affected:** not Vidal's Split (§7). Any Split that stops on accumulated *time* rather than
 accumulated *load* (§8).
 
-**The fix:** stop on the route *without* the leg home. Sound with no assumption about the instance,
-nothing precomputed, and it costs 1.13x (§9).
+**The fix:** two parts, because the violation has two sizes. Stop on the route *without* the leg home,
+and evict from the deque only on **joint** dominance. Sound with no assumption about the instance,
+nothing precomputed, 1.13x in Bellman and 1.18x in the layered decoder (§9).
 
 **The other defect:** fixing the stop does not make the layered decoder unconditional. Its deque
 evicts on cost alone, which is a separate unsound step with a separate fix. That one has its own
@@ -41,12 +48,32 @@ Normally that is positive — the **triangle inequality** says a detour via `v_{
 than going straight home. Routes only get longer as you add vendors, so once you are over `T_H` you
 stay over, and stopping is safe.
 
-**But TSPLIB rounds every distance to a whole number, independently.** That rounding can make
-`d(v_j, depot)` up to one unit bigger than the other two added together. Then adding a vendor makes
-the route *shorter*. If it was over the limit by less than that, it comes back under — and the scan
+**But the triangle inequality is a statement about distance, and the constraint is on duration.** The
+two coincide only when duration is a function of distance and it is the *same* function on every leg.
+Break that and `d(v_j, depot)` can exceed `d(v_j, v_{j+1}) + d(v_{j+1}, depot)`. Adding a vendor then
+makes the route *shorter*, and a route that was over the limit comes back under — after the scan has
 already walked away.
 
 That is revival.
+
+### 1.1 What breaks it, in increasing order of size
+
+| source | violation | exhibited here |
+|---|---|---|
+| **independent integer rounding** — TSPLIB rounds each distance to a whole number on its own | exactly **1 unit**, never more | all 3,150 benchmark instances (`revival_arcs.md`) |
+| **time-dependent travel** — the leg home is driven at a different hour than the arcs replacing it, so it is priced at a different speed | unbounded | `structural_violation.gt` |
+| **queueing or service at the depot**, folded into the return leg | unbounded | — |
+| **driver-hours, breaks, shift ends** charged wherever the leg home falls | unbounded | — |
+| **asymmetric networks** — one-way systems, turn restrictions, tolls, ferries | unbounded | — |
+
+Rounding is the one worth *demonstrating* on, because it assumes nothing: it is already in the data,
+and one unit is enough (§3). But it is the weakest form, and the distinction is not cosmetic.
+
+**The size of the violation decides how much breaks.** A one-unit wobble defeats the early stop and
+nothing else — the deque's eviction rule survives it on all 3,150 instances. A structural violation
+defeats the eviction rule as well, and *that* failure returns `NO SOLUTION` on a feasible instance
+(§9). So a solver hardened only against rounding is hardened against the case that never mattered.
+Everything in §§2–8 below uses rounding because it is the cheapest witness; §9 fixes both.
 
 ---
 
@@ -425,9 +452,21 @@ The claim is about the **constraint**, not the author:
 
 That covers the distance-constrained VRP, the VRPTW, and any duration-limited variant, whether or not
 a multiplier is involved — `ce_rounding` has `m = 1` throughout. Load is monotone by construction;
-duration is monotone only under the triangle inequality, and rounded benchmark instances do not
-satisfy it. Without a control that performs no early stop there is nothing to observe, which may be
-why it appears to be unreported.
+duration is monotone only under the triangle inequality, which is a property of *distances*. Without
+a control that performs no early stop there is nothing to observe, which may be why it appears to be
+unreported.
+
+**And the more realistic the duration model, the worse it gets.** Reading §1.1 as a ladder: rounding
+puts a 1-unit violation into data that is otherwise metric, and is the version a purely academic
+benchmark exhibits. Every step toward a duration a dispatcher would recognise — travel times that
+depend on departure hour, waiting at the depot gate, a break charged against the drive home, a
+one-way ring road — prices the leg home independently of the arcs that replace it and removes the
+bound on the violation entirely. Measured on `structural_violation.gt`: **46% of positions violated,
+median 156 units, maximum 482**, against TSPLIB's invariable 1.
+
+The practical reading is that this is not a benchmark artefact to be tolerated because the margins
+are small. The margins are small *because the benchmark is metric*. A duration-constrained Split
+deployed against real travel times has no such margin, and §9's second half is what it needs.
 
 **Not yet verified, and it decides whether this is a result or a footnote:** whether published
 duration-constrained Split implementations actually contain the pattern. Everything above
@@ -485,12 +524,13 @@ separable — `path_out(i,j) = A[i] + sumDistance[j]` — and `sumDistance[j]` i
 non-decreasing where `Bt[j]` is not. So **both** one-way pointers become sound by swapping which
 quantity they test:
 
-| | `PTVRP_LAYERED` | `PTVRP_LAYERED_CONT` | `..._CONT_FIX` |
-|---|---|---|---|
-| column frontier | `Bt` — unsound | removed | `Bout_t` — **sound** |
-| per-layer suffix `firstTimeLE[k]` | `Bt` — unsound | removed | `Bout_t` — **sound** |
-| feasibility at the deque front | pops on time | steps over, exact | steps over, exact |
-| layer bound | horizon | **none** (`K_full`) | horizon |
+| | `PTVRP_LAYERED` | `PTVRP_LAYERED_CONT` | `..._CONT_FIX` | `..._SAFE` |
+|---|---|---|---|---|
+| column frontier | `Bt` — unsound | removed | `Bout_t` — **sound** | `Bout_t` — **sound** |
+| per-layer suffix `firstTimeLE[k]` | `Bt` — unsound | removed | `Bout_t` — **sound** | `Bout_t` — **sound** |
+| feasibility at the deque front | pops on time | steps over, exact | steps over, exact | steps over, exact |
+| layer bound | horizon | **none** (`K_full`) | horizon | horizon |
+| deque back-pop | key only — assumed | key only — assumed | key only — assumed | **joint** — sound |
 
 ### What it costs
 
@@ -501,13 +541,15 @@ All 3,150 instances, one machine (`sweep_both_fixes.csv`, 15,750 rows). Exactnes
 | solver | total | |
 |---|---|---|
 | `PTVRP_LAYERED` | 23.7 s | unsound frontier |
-| `PTVRP_LAYERED_CONT_FIX` | **28.0 s** | **sound frontier** |
+| `PTVRP_LAYERED_CONT_FIX` | **28.0 s** | **sound frontier**, assumed eviction |
+| `PTVRP_LAYERED_SAFE` | **28.0 s** | **sound frontier and sound eviction** |
 | `PTVRP` | 34.0 s | unsound early stop |
 | `PTVRP_CONT_FIX` | **38.4 s** | **sound early stop** |
 | `PTVRP_CONT` | 781.8 s | no stop — the oracle |
 
 **Soundness costs 1.13× in Bellman and 1.18× in the layered decoder.** Both are ~20× faster than the
-oracle that assumes nothing.
+oracle that assumes nothing. The eviction guard on top is free — 28.0 s either way, identical
+`eff_K` — because on metric-up-to-rounding data it never has to act (below).
 
 In arcs rather than seconds, over the twelve largest instances per set — scanned per start, against
 where the unsound stop would have ended:
@@ -538,13 +580,61 @@ the suffix *minimum* of the route length is tighter still. Both are superseded: 
 precomputed array that must be rebuilt whenever the tour order changes — which, inside HGS, is every
 iteration. The path-out rule needs nothing precomputed and is already a quantity the loop carries.
 
-### What is still assumed
+### The second half of the fix: sound eviction
 
-For the layered decoder only, one assumption remains and it is counted rather than hidden. The
-deque's back-pop discards an older start when a newer one has a key at least as small; that is safe
-for feasibility only if the newer start also fits the horizon whenever the older one does. `UNSAFE
-POPS` counts every pop where it does not hold. **Zero across all 3,150 instances** — a certificate
-for this run, not a proof. `PTVRP_CONT_FIX` has no deque and carries no such assumption.
+The path-out bound closes the *pruning*. It does not close the *deque*, and §1.1 says exactly when
+that matters. `PTVRP_LAYERED_SAFE` (`Program/Split_Layered_PTVRP_safe.{h,cpp}`) closes it.
+
+The deque discards an older start `b` when a newer start `i` has a key at least as small. In the
+capacity-only problem that is enough. With a horizon, `i` must also **fit whenever `b` fits** — and
+the key ranks on cost alone, so it does not check that. Under the triangle inequality it never needs
+to, because `At` is then non-increasing and a later start always fits at least as easily. Off it,
+`At` is not monotone and the deque can throw away the only start that fits:
+
+```
+ce_unsafe_pop_5v.gt    A = [79, 41, 66, -12, 50]      violated at i=2 and i=4
+
+  add 2  ->  [2]                  key 458
+  add 3  ->  450 <= 458, pop 2    A[3] = -12 < A[2] = 66   newcomer fits MORE easily -- safe
+  add 4  ->  396 <= 450, pop 3    A[4] =  50 > A[3] = -12  newcomer fits LESS easily -- UNSAFE
+```
+
+Start 3 was feasible and optimal at 658. Start 4 is cheaper on paper and does not fit. Every layered
+solver without the guard — including `PTVRP_LAYERED_CONT_FIX` — returns `NO SOLUTION` on an instance
+that is feasible. Five vendors; checkable by hand (`revival_result.md` §8.1).
+
+**The repair is one extra clause on the eviction, and it is exact rather than conservative:**
+
+```
+    evict b   when   key(i) <= key(b)   AND   At[i] <= At[b]
+```
+
+Feasibility at column `j` in layer `k` is `(At[start] + Bt[j])·k <= T_H`. Comparing two starts at the
+**same** `j` cancels `Bt[j]` exactly as it cancels in the cost, so `At[i] <= At[b]` means "wherever
+`b` fits, `i` fits", at every `j`, permanently. That is the one `j`-independent comparison that still
+accounts for the leg home — which is why the fix belongs in the eviction and could never have gone
+into the pruning, where the leg home is precisely what must be dropped.
+
+The guard can leave a layer no longer sorted by key, so `sortedByKey[k]` tracks it per layer: while
+the layer is still sorted the query is the original `O(1)` "first feasible from the front"; once a pop
+has been blocked, that layer scans for the cheapest feasible entry instead. `BLOCKED POPS` and
+`UNSORTED QUERIES` report both.
+
+| | `PTVRP_LAYERED_CONT_FIX` | `PTVRP_LAYERED_SAFE` |
+|---|---|---|
+| `ce_unsafe_pop_5v` (optimum 658) | `NO SOLUTION` | **658** |
+| 60 structurally non-metric instances | 59 / 60 | **60 / 60**, 5,205 pops blocked |
+| 3,150 benchmark instances vs `PTVRP_CONT` | 2,829 identical, 321 both-infeasible, 0 differ | **identical** |
+| `BLOCKED POPS` / `UNSORTED QUERIES` on the benchmark | — | **0 / 0** |
+| total | 28.0 s, median `eff_K` 17.3 | 28.0 s, median `eff_K` 17.3 |
+
+Read the last two rows together. On this benchmark the guard costs nothing **because it never fires**:
+no layer ever leaves the original `O(1)` query. That is the stronger statement — not that the guard
+rescued instances here, but that it confirms `PTVRP_LAYERED_CONT_FIX` was already right here, while
+being the difference between right and wrong the moment the data stops being metric.
+
+**So the layered decoder now carries no assumption about the instance at all**, and the qualifier on
+its exactness is gone. `PTVRP_CONT_FIX` never carried one: it has no deque.
 
 ---
 
@@ -581,11 +671,16 @@ python3 batch_run.py --dir "Instances/Instances 1" --dir "Instances/Instances 2"
 
 | solver name | what it is |
 |---|---|
-| `PTVRP` | Bellman DP, stops at the first time-infeasible route. `O(nB)` |
-| `PTVRP_CONT` | same DP, never stops early. `O(n²)`. **Control** |
+| `PTVRP` | Bellman DP, stops at the first time-infeasible route. `O(nB)`. **Unsound** |
+| `PTVRP_CONT` | same DP, never stops early. `O(n²)`. **Control / oracle** |
+| `PTVRP_CONT_FIX` | same DP, stops on the path out. `O(nB)`. **Sound unconditionally** (§9) |
 | `PTVRP_LINEAR` | Vidal's deque applied to PT-VRP. Wrong for a different reason (§2.2) |
-| `PTVRP_LAYERED` | one deque per trip count, plus time pruning. `O(nK)` |
+| `PTVRP_LAYERED` | one deque per trip count, plus time pruning. `O(nK)`. **Unsound frontier** |
 | `PTVRP_LAYERED_CONT` | layers and deques kept, time pruning dropped. `O(n·K_full)`. **Control** (see `revival_result.md`) |
+| `PTVRP_LAYERED_CONT_FIX` | layers plus a path-out frontier. `O(nK)`. Sound pruning, **assumed eviction** |
+| `PTVRP_LAYERED_SAFE` | the above plus joint-dominance eviction. `O(nK)`. **Sound unconditionally** (§9) |
+
+Use `PTVRP_CONT_FIX` or `PTVRP_LAYERED_SAFE`. The others are here to be measured against.
 
 ---
 

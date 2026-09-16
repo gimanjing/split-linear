@@ -77,6 +77,11 @@ Two differences from the CVRP matter:
    does not forbid a template; it makes it more expensive.
 2. The binding feasibility constraint is the horizon, and it binds on the *product* `tau · m`, so
    it tightens non-linearly as a template grows.
+3. **`d` and `tau` are separate quantities.** The cost is on distance, the constraint is on duration.
+   Every instance here happens to set `tau = 2d` — a constant speed — but nothing in the model
+   requires `tau` to be any function of `d` at all, and the moment it is not, the geometric facts
+   that justify the decoders' pruning stop applying to the constraint that uses them. This is the
+   whole of §5.8–§5.10 and §7.4, and §3.3 is where it is stated precisely.
 
 ---
 
@@ -153,9 +158,46 @@ The worked 5-vendor example makes the partition visible. At `p[5]` the layers ta
 `[4,5)`, `[2,4)`, `[1,2)`, `[0,1)` — four disjoint windows tiling `[0,5)`.
 
 **Monotonicity assumption.** The two-pointer windows require `At[]` non-increasing and `Bt[]`
-non-decreasing, which follows from the triangle inequality on travel times. TSPLIB rounds each
-distance independently and so violates it by up to one unit. Rather than refuse to run, the solver
-counts violations and reports them; §5.1 measures whether they ever change an answer.
+non-decreasing, which follows from the triangle inequality on travel times. Rather than refuse to run,
+the solver counts violations and reports them; §5.1 measures whether they ever change an answer.
+
+**When that assumption fails, and by how much.** This is the hinge of §5.8–§5.10 and §7.4, so it is
+worth stating once, in general, rather than as a property of TSPLIB. The triangle inequality is a
+statement about **distances**; every constraint and pointer here is on **duration**. The two coincide
+only when duration is a function of distance and it is the *same* function on every leg. Anything that
+prices the leg home independently of the arcs that replace it breaks them apart:
+
+| source | violation | exhibited here |
+|---|---|---|
+| **independent integer rounding** — each distance rounded to a whole number on its own | exactly **1 unit**, never more | all 3,150 benchmark instances (`revival_arcs.md`) |
+| **time-dependent travel** — the leg home is driven at a different hour, hence a different speed | unbounded | `Instances/Counterexamples/structural_violation.gt` |
+| **queueing or service at the depot**, folded into the return leg | unbounded | — |
+| **driver-hours, breaks, shift ends** charged wherever the leg home falls | unbounded | — |
+| **asymmetric networks** — one-way systems, turn restrictions, tolls, ferries | unbounded | — |
+
+Rounding is the version worth *demonstrating* on, because it assumes no modelling choice at all: it is
+already in the data and one unit suffices (§5.8). It is also the weakest, and the difference is
+load-bearing rather than cosmetic. **The magnitude of the violation determines which mechanism
+breaks**, and the two break at different scales:
+
+| violation | early stop / frontier | deque back-pop |
+|---|---|---|
+| ≤ 1 unit (rounding) | **breaks** — 4 counterexamples, §5.8 | survives; 0 unsafe pops on 3,150 instances |
+| unbounded (structural) | **breaks** | **breaks** — `NO SOLUTION` on a feasible instance, §7.4d |
+
+So a decoder hardened only against rounding is hardened against the half that never mattered.
+Measured on `structural_violation.gt`: 46% of positions violated, median 156 units, maximum 482,
+against TSPLIB's invariable 1. Both mechanisms are repaired in §7.4c and §7.4d.
+
+### 3.4 `PTVRP_CONT_FIX`, `PTVRP_LAYERED_CONT_FIX`, `PTVRP_LAYERED_SAFE` — the sound decoders
+
+Added after §5.8 established the defect. `PTVRP_CONT_FIX` (`Split_Bellman_PTVRP_cont_fix.{h,cpp}`) is
+`PTVRP` stopping on the path out instead of the full route; `PTVRP_LAYERED_CONT_FIX`
+(`Split_Layered_PTVRP_cont_fix.{h,cpp}`) applies the same quantity to both of the layered decoder's
+one-way pointers; `PTVRP_LAYERED_SAFE` (`Split_Layered_PTVRP_safe.{h,cpp}`) adds joint-dominance
+eviction on top, which is what the second row of the table above requires. Derivations, costs and
+sweeps in §7.4c–d. **These are the solvers to use.** `PTVRP` and `PTVRP_LAYERED` are retained as the
+unsound baselines they are measured against.
 
 ---
 
@@ -477,6 +519,14 @@ and adds two legs, so the duration changes by
 which is non-negative only under the triangle inequality. Where that fails, a longer template can be
 *shorter*, and if the shorter one fits the horizon the early stop has already walked away from it.
 
+**The counterexamples below use rounding; the claim is not about rounding.** Per §3.3, the triangle
+inequality on durations fails whenever duration is not one fixed function of distance — hourly traffic,
+depot queueing, driver-hours, one-way networks. Rounding is chosen here only because it is the cheapest
+witness available: it is already in the benchmark and needs no modelling assumption to defend. It is
+also the *smallest* violation of the family, which is why these four instances all turn on a margin of
+one unit. On a duration model that varies with the clock the margin is unbounded, and a second
+mechanism fails as well (§7.4d).
+
 `PTVRP_LAYERED_CONT` (`Split_Layered_PTVRP_cont.{h,cpp}`) is the layered counterpart: it keeps the
 layer partition, which is load-based and unconditionally exact, and drops only the two one-way time
 pointers. The first version scanned every start in every layer, `O(n^2 K)`, and agreed with
@@ -501,11 +551,13 @@ enumeration of all partitions:
 
 Three things these establish that the 3,150-instance sweep could not.
 
-**(a) The violation need only be one unit.** `ce_rounding` has `d(v_2, depot) = 21` against
-`d(v_2, v_3) + d(v_3, depot) = 20` — a violation of exactly the magnitude TSPLIB's independent
-integer rounding produces. The horizon is then placed so that `d(0,2) = 81 > T_H = 80 >= d(0,3) = 80`.
-This is not an artefact of pathological geometry; it is reachable from the rounding already present
-in the instance set.
+**(a) The violation need only be one unit — and one unit is the floor, not the typical case.**
+`ce_rounding` has `d(v_2, depot) = 21` against `d(v_2, v_3) + d(v_3, depot) = 20`, exactly the
+magnitude independent integer rounding produces. The horizon is then placed so that
+`d(0,2) = 81 > T_H = 80 >= d(0,3) = 80`. This is not an artefact of pathological geometry; it is
+reachable from the rounding already present in the instance set. Read the other way, it is the
+*strongest* form of the claim: if one unit suffices, then every larger violation — which is to say
+every non-trivial duration model, §3.3 — suffices too.
 
 **(b) The multiplier does not protect.** `ce_multiplier` keeps `m = 2` constant across the revival
 step, so the failure survives into the regime PT-VRP actually cares about. The margin is 1 unit in
@@ -597,9 +649,18 @@ being monotone, stop breaking on it.
 **The transferable claim is therefore about the constraint, not the author.** Any Split that
 terminates on accumulated **time** rather than accumulated **load** inherits this defect — the
 distance-constrained VRP, VRPTW, any duration-limited variant. Load is monotone by construction;
-duration is monotone only under the triangle inequality, and rounded instances do not satisfy it.
-Without a `_cont`-style control there is nothing to observe, which may be why it appears to be
-unreported.
+duration is monotone only under the triangle inequality, which is a property of *distances*. Without
+a `_cont`-style control there is nothing to observe, which may be why it appears to be unreported.
+
+**And the exposure grows with the realism of the duration model, not with the size of the instance.**
+§3.3 is the ladder: a purely academic benchmark supplies a 1-unit violation through rounding, which is
+enough to make the defect real but keeps every margin tiny. Each step toward a duration a dispatcher
+would recognise — travel time that depends on departure hour, waiting at the depot gate, a break
+charged against the drive home, a one-way ring road — prices the leg home independently of the arcs
+replacing it and removes the bound on the violation entirely. So the small margins measured in §5.8
+and the zero decisive cases in §7.4a are properties of *this benchmark being metric*, not properties
+of the defect. A duration-constrained Split run against real travel times has no such margin, and
+needs both repairs (§7.4c, §7.4d), not just the first.
 
 ## 6. A line of attack that did not survive contact
 
@@ -664,15 +725,33 @@ objective, gives 2-opt final/start cost **0.477 → 0.501**. Clustered demand ma
 
 ## 7. Open questions
 
-1. **Is the PT-VRP cost matrix Monge within a layer? -- Resolved, see §5.7.** Within a layer the
+Status, so the list is readable at a glance:
+
+| | question | state |
+|---|---|---|
+| 7.1 | Monge structure / what layering restores | **resolved** (§5.7) |
+| **7.2** | **a priori bound on `K`** | **open** |
+| **7.3** | **does the crossover move with `T_H`?** | **open** — prediction made, untested |
+| 7.4 | is the early stop unsound, and what to do | **resolved** (§5.8, §7.4c, §7.4d) |
+| 7.5 | does any of it survive inside HGS | **deferred** — later, not now |
+
+So the live work is **7.2 and 7.3**, and only 7.3 has a ready experiment.
+
+1. **Is the PT-VRP cost matrix Monge within a layer? -- RESOLVED, see §5.7.** Within a layer the
    cost is separable, which is the *boundary case* `Delta == 0` of the Monge condition rather than a
    weaker consequence of it, and the moving window does not break it. The full matrix is neither
-   Monge nor inverse-Monge, since `Delta` takes both signs within one instance. What remains open is
-   narrower: **is the full matrix totally monotone?** TM is weaker than Monge, so the
-   counterexamples do not settle it, and it is the last door left for §8.3. Also unverified: whether
-   the witness 4-tuples are realisable from actual geometry rather than only from the abstract
-   monotonicity constraints of §3.3.
-2. **Is there a tighter a priori bound on `K` than the horizon frontier? -- Still open, but the
+   Monge nor inverse-Monge, since `Delta` takes both signs within one instance. The right description
+   of the decoder is **separability restoration**, not a Monge technique, and that is what the
+   question was asking.
+
+   Two residues are parked rather than counted as open here, because neither can change the decoder:
+   **(i)** whether the full matrix is *totally monotone* — TM is weaker than Monge so the
+   counterexamples do not exclude it — which is the last door for §8.3 and belongs there, since it
+   would only matter if someone reopened the exponent line; **(ii)** whether the witness 4-tuples are
+   realisable from actual geometry rather than from the abstract monotonicity constraints of §3.3.
+   (ii) is a referee-proofing chore — scan the instances for a real sign-changing 4-tuple — not a
+   question whose answer would change anything here.
+2. **Is there a tighter a priori bound on `K` than the horizon frontier? -- OPEN. Still open, but the
    frontier is now sound.** §7.4c replaces the unsound frontier with a path-out one at no cost in the
    bound (median `eff_K` 30.2 against the unsound 29.2), so the question is no longer entangled with
    correctness. What is still missing is a bound computable *before* the sweep rather than advanced
@@ -680,7 +759,7 @@ objective, gives 2-opt final/start cost **0.477 → 0.501**. Clustered demand ma
    already improves on `ceil(q_tot/Q)` (median 287) by ~10×, but `eff_K` (median 15) and
    `max_layer_used` (median 9) show there is more slack. A bound computable before the sweep would
    let layers be allocated once rather than grown.
-3. **Does the crossover at `Q ≈ 100` move under a different horizon? -- The §5.4 algebra says no.**
+3. **Does the crossover at `Q ≈ 100` move under a different horizon? -- OPEN. The §5.4 algebra says no.**
    Solving `B·K ≈ T_H/c` together with `K/B = rho = qbar/Q` gives `K ≈ sqrt(rho·T_H/c)` and
    `B ≈ sqrt(T_H/(c·rho))`: both grow as `sqrt(T_H)`, so the *ratio* `B/K = Q/qbar` carries no `T_H`
    at all. With per-unit implementation constants `alpha` (Bellman, per predecessor scanned) and
@@ -696,8 +775,14 @@ objective, gives 2-opt final/start cost **0.477 → 0.501**. Clustered demand ma
    every instance here has `T_H = 86,400`. This is the cheapest available test of §5.4 on a
    dimension it was not fitted to, and it supersedes the earlier guess in this slot that a shorter
    horizon *should* move the crossover (§10.6).
-4. **Does the monotonicity violation ever matter? -- Answered: yes. See §5.8.** The early stop is
-   **unsound**, not merely unproven. Four counterexamples in `Instances/Counterexamples/` drive
+4. **Does the monotonicity violation ever matter? -- RESOLVED: yes, and both halves are now patched.**
+   The defect is established (§5.8), its two mechanisms are separated (a/b), and each has a sound
+   replacement that is implemented, swept and measured (c for the pruning, d for the eviction). The
+   only residue is 7.4a — how often the *unsound* version would actually bite — which the fix makes
+   moot in practice and which is kept below as a measurement, not a blocker.
+
+   The early stop is **unsound**, not merely unproven. Four counterexamples in
+   `Instances/Counterexamples/` drive
    `PTVRP` to a wrong answer, one of them from a triangle violation of **exactly one unit** -- the
    magnitude TSPLIB's independent integer rounding already produces -- and one of them to a false
    `NO SOLUTION` on a feasible instance. All four verified against exhaustive enumeration.
@@ -705,7 +790,8 @@ objective, gives 2-opt final/start cost **0.477 → 0.501**. Clustered demand ma
    `firstTimeLE[k]` are related but not identical defects: `break` abandons a start permanently,
    whereas the layered window can re-admit one in a later column.
 
-   What remains open is now sharper, and in three parts.
+   What follows is in four parts: (a) how often it bites, (b) the layered decoder's counter,
+   (c) the repair to the pruning, (d) the repair to the eviction. Only (a) is still a measurement.
 
    **(a) Frequency on realistic geometry.** The counterexamples are constructed: the horizon is
    placed deliberately in the one-unit gap. On the 3,150-instance benchmark the early stop skipped an
@@ -769,7 +855,55 @@ objective, gives 2-opt final/start cost **0.477 → 0.501**. Clustered demand ma
    the tour order changes -- which inside HGS is every iteration. The path-out rule needs nothing
    precomputed.
 
-5. **Does any of this survive inside HGS?** Every result here is on a static giant tour. Split inside
+   **(d) The other mechanism -- the deque back-pop -- ANSWERED: it also breaks, and it is also
+   patched.** (c) closes the *pruning*. It does not close the *deque*, and §3.3 says exactly when the
+   difference shows: at rounding scale the back-pop survives (0 unsafe pops on 3,150 instances), at
+   structural scale it does not.
+
+   The deque discards an older start `b` when a newer start `i` has a key at least as small. With a
+   horizon, `i` must also **fit whenever `b` fits**, and the key -- `p[i] + k·A[i]` -- ranks on cost
+   alone. Under the triangle inequality `At` is non-increasing and a later start always fits at least
+   as easily, so the gap never opens. Off it, the deque can discard the only start that fits.
+   `ce_unsafe_pop_5v.gt` is five vendors with `A = [79, 41, 66, -12, 50]`, and every layered solver
+   without the guard -- `PTVRP_LAYERED_CONT_FIX` included -- returns **`NO SOLUTION` on an instance
+   feasible at 658**. That is a worse failure mode than any in §5.8.
+
+   `PTVRP_LAYERED_SAFE` (`Split_Layered_PTVRP_safe.{h,cpp}`) adds one clause, and it is exact rather
+   than conservative:
+
+   ```
+       evict b   when   key(i) <= key(b)   AND   At[i] <= At[b]
+   ```
+
+   Feasibility at column `j` in layer `k` is `(At[start] + Bt[j])·k <= T_H`. Comparing two starts at
+   the **same** `j` cancels `Bt[j]`, exactly as it cancels in the cost, so `At[i] <= At[b]` means
+   "wherever `b` fits, `i` fits", at every `j`, permanently. That is the one `j`-independent
+   comparison that still accounts for the leg home, which is why this repair belongs in the eviction
+   and could not have gone into the pruning -- where the leg home is precisely what must be dropped.
+   The guard can leave a layer unsorted by key, so `sortedByKey[k]` is tracked per layer: sorted
+   layers keep the original `O(1)` "first feasible from the front" query, and a layer whose pop was
+   blocked scans for the cheapest feasible entry instead. `BLOCKED POPS` and `UNSORTED QUERIES`
+   report both.
+
+   | | `PTVRP_LAYERED_CONT_FIX` | `PTVRP_LAYERED_SAFE` |
+   |---|---|---|
+   | `ce_unsafe_pop_5v` (optimum 658) | `NO SOLUTION` | **658** |
+   | 60 structurally non-metric instances | 59 / 60 | **60 / 60**, 5,205 pops blocked |
+   | 3,150 benchmark instances vs `PTVRP_CONT` | 2,829 identical, 321 both-infeasible, 0 differ | **identical** |
+   | `BLOCKED POPS` / `UNSORTED QUERIES` on the benchmark | -- | **0 / 0** |
+   | total, median `eff_K` | 28.0 s, 17.3 | 28.0 s, 17.3 |
+
+   The last two rows are the point, and the stronger reading is not that the guard rescued instances
+   here. It is that the guard **never fired**: no layer ever left the `O(1)` query, so the guard is
+   free on metric-up-to-rounding data, and it confirms that `PTVRP_LAYERED_CONT_FIX` was already
+   correct on this benchmark rather than rescuing it. The two diverge only once the data stops being
+   metric, which is where §3.3 says real duration models live.
+
+   **With (c) and (d) both in, the layered decoder carries no assumption about the instance at all**,
+   and the conditional on its exactness -- "exact provided `UNSAFE POPS` is zero" -- is gone.
+   `PTVRP_CONT_FIX` never carried one: it has no deque.
+
+5. **Does any of this survive inside HGS? -- DEFERRED, for later.** Every result here is on a static giant tour. Split inside
    HGS is called on tours that are themselves evolving, and the distribution of those tours is not
    the distribution of TSPLIB orders. Two separable halves, neither attempted. **(a)** Does the
    demand centroid stay near 0.5 under OX/PMX crossover, which is position-based and demand-blind?
@@ -779,7 +913,7 @@ objective, gives 2-opt final/start cost **0.477 → 0.501**. Clustered demand ma
    to a penalty-based fitness, given that 321 instances are genuinely infeasible and §5.2 shows the
    deque never detects infeasibility at all.
 
-### Status ledger (2026-09-14)
+### Status ledger (2026-09-16)
 
 A snapshot of what is settled and what is not, so the distinction survives the next gap in work.
 "Settled" means the argument has been made and checked here; it does not mean peer-reviewed.
@@ -805,20 +939,28 @@ A snapshot of what is settled and what is not, so the distinction survives the n
 | Soundness costs 1.13x (Bellman) / 1.18x (layered) | `sweep_both_fixes.csv`, one machine | ~20x faster than the oracle either way |
 | A sound frontier restores the layer bound | median `eff_K` 998.9 -> 30.2 on `Instances 3` | within 3% of what the unsound frontier gave |
 | `firstTimeLE` does mis-step on real instances | 18 revived winners on 18 instances, 2 improving, 0 decisive | answers §7.4b; all 18 inside Bellman's 103 |
+| The defect is about duration not being a function of distance; rounding is its weakest instance | §3.3 ladder; `structural_violation.gt` violates 46% of positions by a median 156 vs TSPLIB's 1 | the non-rounding sources (traffic, queueing, driver-hours) are argued from the model, not instrumented |
+| The deque back-pop **is** decisive off metric data | `ce_unsafe_pop_5v`: every unguarded layered solver returns `NO SOLUTION` on an instance feasible at 658 | five vendors, checkable by hand (§7.4d) |
+| Joint-dominance eviction closes it, exactly and for free | `PTVRP_LAYERED_SAFE`: 60/60 structural, 3,150/3,150 benchmark, 28.0 s, guard fired 0 times | `At[i] <= At[b]` is exact because `Bt[j]` cancels at fixed `j` |
+| The layered decoder now carries **no** instance assumption | (c) + (d) together | the "provided `UNSAFE POPS` = 0" qualifier is retired |
 
 **Open**
 
 | question | state | what is missing |
 |---|---|---|
-| Is the full matrix totally monotone? | open | TM is weaker than Monge, so §5.7 does not settle it. Last door for §8.3 |
-| Are the §5.7 witnesses geometrically realisable? | open | scan the existing instances for a real sign-changing 4-tuple |
-| A priori bound on `K` (§7.2) | open | reframed, not answered; no candidate beyond what `K_allocated` already computes |
-| Does the crossover move with `T_H` (§7.3)? | prediction only | the two-horizon rerun |
-| How often does the unsound early stop actually bite? (§7.4a) | **still open** — 0 of 3,150 here | a horizon sweep; §5.9 predicts the rate is horizon-free. The fix makes this moot in practice but not as a question |
-| Does the path-out fix hold off this benchmark? | argued, not measured | instance-independent by construction, but every run here is `T_H = 86,400` with TSPLIB rounding |
-| Is the deque back-pop ever decisive? | `UNSAFE POPS` = 0 on 3,150 | a certificate for these runs, not a proof. `PTVRP_CONT_FIX` avoids it entirely — it has no deque |
-| Survival inside HGS (§7.5) | untouched | centroid stability; cross-call reuse; infeasibility reporting |
+| **A priori bound on `K` (§7.2)** | **open** | reframed, not answered; no candidate beyond what `K_allocated` already computes |
+| **Does the crossover move with `T_H` (§7.3)?** | **open — prediction only** | the two-horizon rerun; the one live question with an experiment already specified |
+| How often would the *unsound* early stop bite? (§7.4a) | open, and now academic | a horizon sweep. Both decoders are patched, so this only sizes the defect in code that has not been patched |
+| Survival inside HGS (§7.5) | **deferred — later** | centroid stability; cross-call reuse; infeasibility reporting |
 | Realisable fraction of §8.1 | open | unchanged — unknown until implemented |
+
+**Parked** — residues that cannot change the decoder, kept so they are not rediscovered as new
+
+| question | where it belongs |
+|---|---|
+| Is the full matrix totally monotone? | §8.3, the exponent line. TM is weaker than Monge so §5.7 does not exclude it; only matters if that line is reopened |
+| Are the §5.7 witnesses geometrically realisable? | referee-proofing; scan the instances for a real sign-changing 4-tuple |
+| Does the path-out fix hold off this benchmark? | **largely answered** by the 60 structural instances (`PTVRP_CONT_FIX` 60/60). Untested only across horizons, which §7.3's rerun would cover |
 
 ---
 
@@ -872,8 +1014,18 @@ analogue in the static benchmark and is not yet a numbered item anywhere.
 
 ### 8.4 Repository debt
 
-- README §"Skewing the load along the tour" still carries the superseded skew table and the claim
-  that concentration barely registers. Superseded by §5.6 and §10.1.
+- ~~README's solver table stops at `PTVRP_LAYERED_CONT`~~ — **cleared 2026-09-16.** It now lists all
+  eight PT-VRP solvers, marks which are unsound, and says plainly to use `PTVRP_CONT_FIX` or
+  `PTVRP_LAYERED_SAFE`. The instance list gained `Instances/Counterexamples/`.
+- ~~`revival_result.md` presents the back-pop as an open assumption~~ — **cleared 2026-09-16.** §8.2
+  documents `PTVRP_LAYERED_SAFE`, §8 option 3 no longer says "not yet implemented", §3's certificate
+  is explicitly marked conditional with a pointer to where the condition fails, and §9's "look for an
+  instance with `UNSAFE POPS > 0`" is marked answered by its own §8.1.
+- ~~README §"Skewing the load along the tour" carries the superseded skew table~~ — already corrected;
+  it now shows the filtered 5x4 matrix and points at §10.1. Nothing to do.
+- `-horizon` is not a command-line flag. `Pb_Data.cpp:56` takes the horizon from the instance file's
+  `MAX_ROUTE`, and `commandline.cpp` parses only `-solver -veh -pen -trace`. §7.3's two-horizon rerun
+  needs this; adding the flag is far cheaper than rewriting 6,300 instance files.
 - `full_sweep.csv` (9,450 rows) and `per_instance_K.csv` (2,829 rows) are currently gitignored.
   Decision pending: commit raw, commit a summary, or leave out and regenerate.
 - The orientation rule of §6.2 is designed but not implemented. Given §6.2's conclusion, it should
@@ -896,11 +1048,19 @@ python3 batch_run.py --dir "Instances/Instances 1" --dir "Instances/Instances 2"
     --dir "Instances/Instances 3" \
     --solver PTVRP PTVRP_LINEAR PTVRP_LAYERED --out full_sweep.csv
 
-# the four counterexamples of §5.8 -- PTVRP is wrong on all four, PTVRP_CONT right on all four
+# the four counterexamples of §5.8 -- PTVRP is wrong on all four, the two fixed solvers right
 for f in Instances/Counterexamples/*.gt; do
-  for s in PTVRP PTVRP_CONT PTVRP_LAYERED; do
+  for s in PTVRP PTVRP_CONT PTVRP_CONT_FIX PTVRP_LAYERED PTVRP_LAYERED_SAFE; do
     echo -n "$(basename $f) $s "; Program/split "$f" -solver $s 2>&1 | grep -E "SOLUTION COST|no Split"
   done
+done
+
+# §7.4d -- the back-pop, where only PTVRP_LAYERED_SAFE survives among the layered solvers
+for s in PTVRP_CONT PTVRP_CONT_FIX PTVRP_LAYERED_CONT_FIX PTVRP_LAYERED_SAFE; do
+  echo -n "$s "
+  Program/split Instances/Counterexamples/ce_unsafe_pop_5v.gt -solver $s 2>&1 \
+    | grep -oE "SOLUTION COST : [0-9.]+|UNSAFE POPS : [0-9]+|BLOCKED POPS : [0-9]+|no Split solution" \
+    | tr '\n' ' '; echo
 done
 
 # the skew matrix behind §5.6
