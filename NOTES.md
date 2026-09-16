@@ -537,6 +537,10 @@ with `n` simply because there are more crossings, not because the process differ
 per-crossing rate is not flat across `n` (6.7 / 77 / 33 / 35 per million by size bucket); short tours
 are lower, most likely because many starts never reach the horizon at all.
 
+**Superseded as a repair, not as a measurement.** The suffix bound this section suggested is sound
+but needs an O(n) array rebuilt whenever the tour order changes. The path-out rule (§7.4c) needs
+nothing precomputed and is what was implemented. The rate measurements below stand.
+
 **This is the same dimensionless group as §7.3.** That section derives `B` and `K` both scaling as
 `sqrt(T_H)`, so the ratio `B/K = Q/qbar = 1/rho` is horizon-free. Revival is governed by the same
 `rho` and is horizon-free for the same reason: `T_H` cancels. The two questions are separate — §7.3
@@ -649,7 +653,11 @@ objective, gives 2-opt final/start cost **0.477 → 0.501**. Clustered demand ma
    counterexamples do not settle it, and it is the last door left for §8.3. Also unverified: whether
    the witness 4-tuples are realisable from actual geometry rather than only from the abstract
    monotonicity constraints of §3.3.
-2. **Is there a tighter a priori bound on `K` than the horizon frontier?** `K_allocated` (median 27)
+2. **Is there a tighter a priori bound on `K` than the horizon frontier? -- Still open, but the
+   frontier is now sound.** §7.4c replaces the unsound frontier with a path-out one at no cost in the
+   bound (median `eff_K` 30.2 against the unsound 29.2), so the question is no longer entangled with
+   correctness. What is still missing is a bound computable *before* the sweep rather than advanced
+   during it. `K_allocated` (median 27)
    already improves on `ceil(q_tot/Q)` (median 287) by ~10×, but `eff_K` (median 15) and
    `max_layer_used` (median 9) show there is more slack. A bound computable before the sweep would
    let layers be allocated once rather than grown.
@@ -688,33 +696,59 @@ objective, gives 2-opt final/start cost **0.477 → 0.501**. Clustered demand ma
    convention, or non-Euclidean travel times is untested. §5.9 predicts the rate is horizon-free;
    that prediction has not been run.
 
-   **(b) The layered decoder has no consequence counter.** `monotonicityViolations`
-   (`Split_Layered_PTVRP.cpp:51`) is a **precondition** check -- it scans `At[]`/`Bt[]` once and
-   counts where the arrays are non-monotone. `PTVRP_CONT`'s `revived_arcs` is a **consequence**
-   counter. Measured against each other on `Instances 1`:
+   **(b) The layered decoder has no consequence counter -- ANSWERED.** It now has one.
+   `monotonicityViolations` (`Split_Layered_PTVRP.cpp:51`) is only a **precondition** check: it scans
+   `At[]`/`Bt[]` once and counts where the arrays are non-monotone. Measured against `PTVRP_CONT`'s
+   consequence counter on `Instances 1`, 24,050 flagged positions produced 167 revived arcs -- zero
+   misses, but a 144:1 false-alarm rate, tripping on 740 of 1,050 instances. Useless as evidence.
 
-   | | instances |
-   |---|---|
-   | precondition flagged **and** arcs revived | 93 |
-   | precondition flagged, nothing revived | 647 |
-   | arcs revived, precondition **not** flagged | **0** |
-   | neither | 310 |
+   `PTVRP_LAYERED_CONT` and `PTVRP_LAYERED_CONT_FIX` both report `REVIVED STARTS` / `REVIVED
+   IMPROVING` -- starts that won a layer from behind where the pruned solver's frontier stood. Over
+   all 3,150 instances: **18 revived winners on 18 instances, 2 improving, 0 changing an answer**
+   (20 / 2 / 0 with the bound in place). All 18 sit inside Bellman's 103. So the layered half of this
+   question no longer rests on cost agreement.
 
-   24,050 flagged positions produced 167 revived arcs: a sound alarm (zero misses) but a 144:1 false
-   alarm rate, tripping on 740 of 1,050 instances. As evidence it is close to useless. **Now built**: `PTVRP_LAYERED_CONT` mirrors the `PTVRP_CONT`
-   instrumentation, reporting `REVIVED STARTS` / `REVIVED IMPROVING` for starts behind the frontier.
-   It agreed with `PTVRP_CONT` on the 480 instances with `n <= 600` at `O(n^2 K)`; the deque-based
-   rebuild at `O(n·K_full)` now covers all 3,150 (`revival_result.md`). The original suggestion was to
-   mirror the `PTVRP_CONT` instrumentation inside `firstTimeLE[k]` -- count starts the pointer walked
-   past that were in fact horizon-feasible, and how many would have improved a label. Until that
-   exists, the layered half of this question rests on cost agreement, which is weaker than it looks:
-   the decoder could skip a different set of starts and still reach the same total.
+   **(c) What to do about it -- ANSWERED: patch it, and it is nearly free.** None of the three options
+   listed here was taken. The rule that works is simpler than all of them: **prune on the route
+   without the leg home.**
 
-   **(c) What to do about it.** Three options, none yet chosen. Keep the early stop and document it
-   as unsound-but-unobserved; replace the `break` with a bounded lookahead of a few positions, which
-   covers one-unit violations at near-zero cost; or enforce the triangle inequality once at load time
-   and report where the instance violates it. The third is the only one that restores a proof, and it
-   changes the instance rather than the algorithm.
+   ```
+       path_out(i,j) = A[i] + sumDistance[j]          the route minus the return leg
+       stop when   path_out(i,j) * m(i,j) > T_H
+   ```
+
+   Sound with no assumption about the instance whatever -- not the triangle inequality, not rounding,
+   not symmetry. `sumDistance` only grows (extending a template appends an arc and removes nothing,
+   the leg home being exactly what is excluded), `m` only grows, and `d(i,j) >= path_out(i,j)`.
+   Revival lives entirely in the leg home, so a bound that ignores it cannot be escaped. The test
+   deciding whether an arc may be *used* is unchanged and exact; an arc that fails it is skipped, not
+   stopped on.
+
+   Two solvers implement it, `PTVRP_CONT_FIX` (`Split_Bellman_PTVRP_cont_fix.{h,cpp}`, a one-line
+   change since the Bellman loop's running `time` already is the path out) and
+   `PTVRP_LAYERED_CONT_FIX` (`Split_Layered_PTVRP_cont_fix.{h,cpp}`, where the same quantity makes
+   *both* one-way pointers sound because `sumDistance` is monotone where `Bt` is not).
+
+   All 3,150 instances against `PTVRP_CONT` (`sweep_both_fixes.csv`, 15,750 rows, one machine):
+   **2,829 identical, 321 both-infeasible, 0 disagreements, 0 `UNSAFE POPS`.**
+
+   | solver | total | |
+   |---|---|---|
+   | `PTVRP_LAYERED` | 23.7 s | unsound frontier |
+   | `PTVRP_LAYERED_CONT_FIX` | **28.0 s** | exact |
+   | `PTVRP` | 34.0 s | unsound early stop |
+   | `PTVRP_CONT_FIX` | **38.4 s** | exact |
+   | `PTVRP_CONT` | 781.8 s | no stop, the oracle |
+
+   **Soundness costs 1.13x in Bellman and 1.18x in the layered decoder**, and both stay ~20x faster
+   than the oracle. For the layered decoder the bound also restores `eff_K`: median 998.9 -> 30.2 on
+   `Instances 3`, against 29.2 for the unsound frontier. Details in `revival.md` §9 and
+   `revival_result.md` §6.
+
+   This supersedes §5.9's proposed suffix bound and the suffix-minimum refinement that followed it.
+   Both are sound, and the suffix minimum is tighter, but both need an O(n) array rebuilt whenever
+   the tour order changes -- which inside HGS is every iteration. The path-out rule needs nothing
+   precomputed.
 
 5. **Does any of this survive inside HGS?** Every result here is on a static giant tour. Split inside
    HGS is called on tours that are themselves evolving, and the distribution of those tours is not
@@ -748,6 +782,10 @@ A snapshot of what is settled and what is not, so the distinction survives the n
 | All 3 PT-VRP solvers agree on 3,150/3,150 real instances | full sweep, identical cost strings | agreement is not soundness (§5.8) |
 | Revival is gated by `rho = qbar/Q`, horizon-free | 35x rate cliff at `rho = 1` (§5.9) | per-crossing rate not flat in `n` |
 | Vidal's original Split is unaffected | every guard is load-based (§5.10) | load is monotone by construction |
+| The unsound early stop can be made **exact** by pruning on the path out | 3,150 instances, 0 disagreements vs `PTVRP_CONT` (§7.4c) | needs no assumption and nothing precomputed |
+| Soundness costs 1.13x (Bellman) / 1.18x (layered) | `sweep_both_fixes.csv`, one machine | ~20x faster than the oracle either way |
+| A sound frontier restores the layer bound | median `eff_K` 998.9 -> 30.2 on `Instances 3` | within 3% of what the unsound frontier gave |
+| `firstTimeLE` does mis-step on real instances | 18 revived winners on 18 instances, 2 improving, 0 decisive | answers §7.4b; all 18 inside Bellman's 103 |
 
 **Open**
 
@@ -757,9 +795,9 @@ A snapshot of what is settled and what is not, so the distinction survives the n
 | Are the §5.7 witnesses geometrically realisable? | open | scan the existing instances for a real sign-changing 4-tuple |
 | A priori bound on `K` (§7.2) | open | reframed, not answered; no candidate beyond what `K_allocated` already computes |
 | Does the crossover move with `T_H` (§7.3)? | prediction only | the two-horizon rerun |
-| How often does the unsound early stop actually bite? (§7.4a) | 0 of 3,150 here | a horizon sweep; §5.9 predicts the rate is horizon-free |
-| Does `firstTimeLE` mis-step on real instances? (§7.4b) | only cost agreement | a consequence counter inside the layered decoder; the precondition counter is 144:1 loose |
-| Keep, patch, or reject the early stop? (§7.4c) | undecided | three options stated, none costed |
+| How often does the unsound early stop actually bite? (§7.4a) | **still open** — 0 of 3,150 here | a horizon sweep; §5.9 predicts the rate is horizon-free. The fix makes this moot in practice but not as a question |
+| Does the path-out fix hold off this benchmark? | argued, not measured | instance-independent by construction, but every run here is `T_H = 86,400` with TSPLIB rounding |
+| Is the deque back-pop ever decisive? | `UNSAFE POPS` = 0 on 3,150 | a certificate for these runs, not a proof. `PTVRP_CONT_FIX` avoids it entirely — it has no deque |
 | Survival inside HGS (§7.5) | untouched | centroid stability; cross-call reuse; infeasibility reporting |
 | Realisable fraction of §8.1 | open | unchanged — unknown until implemented |
 

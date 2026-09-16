@@ -8,6 +8,8 @@ its duration `tau(sigma)*m(sigma)` must fit `T_H`.
 **`revival.md`** is the step-by-step explanation of one specific finding: the early stop used by
 time-constrained Split is unsound, with worked traces on a 10-vendor instance and on the
 counterexamples. Start there if you want the mechanism rather than the survey.
+`revival_result.md` carries the full-benchmark results and the fix: stopping on the route *without*
+the leg home is sound with no assumption about the instance, and costs 1.13x.
 
 **`NOTES.md`** is the research write-up: why Vidal's linear Split does not apply here, what
 replaces it, the full measurements, the lines of attack that failed, and what is still open.

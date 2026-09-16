@@ -8,6 +8,9 @@ assumes this cannot happen. On rounded instances it can, and the answer comes ou
 **Who is affected:** not Vidal's Split (§7). Any Split that stops on accumulated *time* rather than
 accumulated *load* (§8).
 
+**The fix:** stop on the route *without* the leg home. Sound with no assumption about the instance,
+nothing precomputed, and it costs 1.13x (§9).
+
 Everything below is produced by the code in this repository. Every trace is copied from real output;
 nothing is illustrative. Commands are in §9.
 
@@ -429,38 +432,115 @@ and checks, the honest claim is narrower than the one in the box.
 
 ---
 
-## 9. A possible repair
+## 9. The repair
 
-Not yet proved, and not yet implemented. Recorded because it looks cheap.
+Implemented and measured. **Stop on the route *without* the leg home.**
 
-Measured across 1,200 benchmark instances:
-
-| | |
-|---|---|
-| largest triangle violation `delta` | **exactly 1.00** |
-| mean inter-vendor distance `c` | 39.6 |
-| `delta / c` | 0.020 median, 0.158 worst |
-
-One step forward adds about 40. One violation takes back at most 1. The wobble is two orders of
-magnitude below the drift, which suggests an exact stop is nearly free.
-
-Precompute a suffix sum of the instance's own violations, once, in `O(n)`:
+Recall §1: adding a stop lengthens the path out to the new vendor, and *replaces* the leg home. The
+path out can only grow — you append an arc and remove nothing. The leg home is the only piece that
+can shrink, and it is exactly where revival lives. So exclude it:
 
 ```
-    D[j] = sum over j' >= j of  max(0, dreturn[j'] - dnext[j'] - dreturn[j'+1])
+    path out (i,j) = depot -> v_{i+1} -> ... -> v_j          no leg home
+
+    stop when   path_out(i,j) · m(i,j)  >  T_H
 ```
 
-Then stop on `(tau(i,j) - D[j]) · m > T_H` instead of `tau(i,j) · m > T_H`. Since the trip count only
-grows, no later route can fit once that fires — so the stop becomes **exact**. On an instance
-satisfying the triangle inequality `D` is identically zero and the behaviour is unchanged.
+Sound with **no assumption about the instance at all** — not the triangle inequality, not rounding,
+not symmetry. Three facts, each immediate:
 
-Sanity check on `ce_rounding`: one violation of 1 at position 2, so `D[2] = 1`. At `p[2]` from start
-0, `tau = 81` and `(81 − 1)·1 = 80 <= 80`, so the scan does **not** stop, continues, and finds the
-route of length 80. Correct.
+1. `path_out` is non-decreasing in `j` (append an arc, remove nothing);
+2. `m` is non-decreasing in `j` (demand accumulates);
+3. the full route is `path_out + leg home >= path_out`.
 
-**Two caveats.** The multiplier interaction needs a careful re-derivation before anyone relies on
-this. And the layered decoder prunes on `At[i]` rather than a forward-accumulating `tau`, so the same
-construction has to be redone there — it is not obviously the same argument.
+So once `path_out · m` exceeds the horizon, every longer template from that start is infeasible,
+permanently. **Revival cannot escape a bound that ignores the leg home.**
+
+The test that decides whether an arc may be *used* is unchanged and exact: `tau(i,j)·m <= T_H`, on
+the full route. An arc failing it is **skipped, not stopped on**. Pruning is conservative;
+feasibility is exact.
+
+Check it on `ce_rounding` from §3. From start 0 at vendor 2: the path out is `30 + 30 = 60`, and
+`60 · 1 = 60 <= 80`, so the scan does **not** stop. It continues, reaches vendor 3, and finds the
+route of length 80. Correct — and note it never needed to know that a shorter route was coming.
+
+### In Bellman it is one line
+
+`PTVRP_CONT_FIX` (`Program/Split_Bellman_PTVRP_cont_fix.{h,cpp}`). The loop's running `time` already
+*is* the path out — the return leg is only ever added into `tau_ij` — so the change is:
+
+```cpp
+if (pathOut * m > myData->horizon + 1.e-9)
+    break ;                        // sound: pathOut and m only grow, and tau >= pathOut
+```
+
+### In the layered decoder it is the same quantity, twice
+
+`PTVRP_LAYERED_CONT_FIX` (`Program/Split_Layered_PTVRP_cont_fix.{h,cpp}`). The path out is also
+separable — `path_out(i,j) = A[i] + sumDistance[j]` — and `sumDistance[j]` is unconditionally
+non-decreasing where `Bt[j]` is not. So **both** one-way pointers become sound by swapping which
+quantity they test:
+
+| | `PTVRP_LAYERED` | `PTVRP_LAYERED_CONT` | `..._CONT_FIX` |
+|---|---|---|---|
+| column frontier | `Bt` — unsound | removed | `Bout_t` — **sound** |
+| per-layer suffix `firstTimeLE[k]` | `Bt` — unsound | removed | `Bout_t` — **sound** |
+| feasibility at the deque front | pops on time | steps over, exact | steps over, exact |
+| layer bound | horizon | **none** (`K_full`) | horizon |
+
+### What it costs
+
+All 3,150 instances, one machine (`sweep_both_fixes.csv`, 15,750 rows). Exactness is against
+`PTVRP_CONT`, which scans every pair and assumes nothing: **2,829 identical, 321 both-infeasible,
+0 disagreements**, for every solver.
+
+| solver | total | |
+|---|---|---|
+| `PTVRP_LAYERED` | 23.7 s | unsound frontier |
+| `PTVRP_LAYERED_CONT_FIX` | **28.0 s** | **sound frontier** |
+| `PTVRP` | 34.0 s | unsound early stop |
+| `PTVRP_CONT_FIX` | **38.4 s** | **sound early stop** |
+| `PTVRP_CONT` | 781.8 s | no stop — the oracle |
+
+**Soundness costs 1.13× in Bellman and 1.18× in the layered decoder.** Both are ~20× faster than the
+oracle that assumes nothing.
+
+In arcs rather than seconds, over the twelve largest instances per set — scanned per start, against
+where the unsound stop would have ended:
+
+| set | sound | unsound | overhead | no stop (`n/2`) |
+|---|---|---|---|---|
+| `Instances 1` | 518.2 | 463.4 | 1.12× | 35,504 |
+| `Instances 2` | 11.5 | 6.6 | 1.73× | 35,504 |
+| `Instances 3` | 6.5 | 3.8 | 1.72× | 35,504 |
+
+The ratio is worse on the low-capacity sets, but read the absolute numbers: 6–12 arcs per start.
+1.7× of almost nothing, which is why the wall clock barely moves.
+
+And for the layered decoder, the bound recovers nearly everything the *unsound* frontier gave —
+median `eff_K`:
+
+| set | no bound | **sound bound** | unsound |
+|---|---|---|---|
+| `Instances 1` | 4.0 | **2.0** | 1.9 |
+| `Instances 2` | 499.7 | **24.2** | 18.5 |
+| `Instances 3` | 998.9 | **30.2** | 29.2 |
+
+### What this supersedes
+
+An earlier draft of this section proposed a suffix sum of the instance's own triangle violations,
+`D[j]`, and stopping on `(tau(i,j) − D[j])·m > T_H`. That is also sound, and a later refinement using
+the suffix *minimum* of the route length is tighter still. Both are superseded: they need an O(n)
+precomputed array that must be rebuilt whenever the tour order changes — which, inside HGS, is every
+iteration. The path-out rule needs nothing precomputed and is already a quantity the loop carries.
+
+### What is still assumed
+
+For the layered decoder only, one assumption remains and it is counted rather than hidden. The
+deque's back-pop discards an older start when a newer one has a key at least as small; that is safe
+for feasibility only if the newer start also fits the horizon whenever the older one does. `UNSAFE
+POPS` counts every pop where it does not hold. **Zero across all 3,150 instances** — a certificate
+for this run, not a proof. `PTVRP_CONT_FIX` has no deque and carries no such assumption.
 
 ---
 
@@ -481,9 +561,9 @@ for s in PTVRP PTVRP_CONT PTVRP_LAYERED PTVRP_LAYERED_CONT; do
   Program/split Instances/Counterexamples/ce_rounding.gt -solver $s -trace 1
 done
 
-# §5 -- all four counterexamples
+# §5, §9 -- all four counterexamples, unsound and fixed solvers side by side
 for f in Instances/Counterexamples/*.gt; do
-  for s in PTVRP PTVRP_CONT PTVRP_LAYERED PTVRP_LAYERED_CONT; do
+  for s in PTVRP PTVRP_CONT PTVRP_CONT_FIX PTVRP_LAYERED PTVRP_LAYERED_CONT_FIX; do
     echo -n "$(basename $f) $s "
     Program/split "$f" -solver $s 2>&1 | grep -E "SOLUTION COST|no Split"
   done
