@@ -32,6 +32,8 @@ using namespace std ;
 //                  The dominance test is left exactly as it is in Split_Linear, so it compares
 //                  predecessors by their fixed cost while ignoring the trip multiplier that actually
 //                  scales that cost. It exists to measure what the shortcut costs, not to be used.
+// LAYERED_PTVRP_SAFE --> LAYERED_PTVRP_CONT_FIX plus a sound eviction rule : a start is discarded only
+//                        when the newcomer is both cheaper and at least as feasible. No assumption left.
 // BELLMAN_PTVRP_CONT_FIX --> BELLMAN_PTVRP with a SOUND early stop : stops on the path out (route
 //                        without the leg home), which never shrinks, so O(n*B) is restored exactly.
 // LAYERED_PTVRP_CONT_FIX --> LAYERED_PTVRP_CONT with a SOUND horizon bound : prunes on the path out
@@ -42,7 +44,7 @@ using namespace std ;
 //                        starts are stepped over at query time instead of discarded.
 // BELLMAN_PTVRP_CONT --> BELLMAN_PTVRP without the early stop, O(n^2). Makes no triangle-inequality
 //                        assumption, so it is the reference for whether the early stop ever matters.
-enum SolverType {BELLMAN, BELLMAN_SOFT, BELLMAN_BOUNDED, LINEAR, LINEAR_SOFT, LINEAR_BOUNDED, BELLMAN_PTVRP, LINEAR_PTVRP, LAYERED_PTVRP, BELLMAN_PTVRP_CONT, LAYERED_PTVRP_CONT, LAYERED_PTVRP_CONT_FIX, BELLMAN_PTVRP_CONT_FIX};
+enum SolverType {BELLMAN, BELLMAN_SOFT, BELLMAN_BOUNDED, LINEAR, LINEAR_SOFT, LINEAR_BOUNDED, BELLMAN_PTVRP, LINEAR_PTVRP, LAYERED_PTVRP, BELLMAN_PTVRP_CONT, LAYERED_PTVRP_CONT, LAYERED_PTVRP_CONT_FIX, BELLMAN_PTVRP_CONT_FIX, LAYERED_PTVRP_SAFE};
 
 // Service time incurred at a vendor on each visit, in the same time units as the horizon.
 // PT-VRP defines tau(sigma) as the travel time of one trip plus the service time of every vendor

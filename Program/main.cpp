@@ -23,6 +23,7 @@
 #include "Split_Layered_PTVRP_cont.h"
 #include "Split_Layered_PTVRP_cont_fix.h"
 #include "Split_Bellman_PTVRP_cont_fix.h"
+#include "Split_Layered_PTVRP_safe.h"
 #include <iostream>
 
 int main (int argc, char *argv[])
@@ -67,6 +68,8 @@ int main (int argc, char *argv[])
 			mySolver = new Split_Layered_PTVRP_cont_fix(myData);
 		else if (myData->solverType == BELLMAN_PTVRP_CONT_FIX)
 			mySolver = new Split_Bellman_PTVRP_cont_fix(myData);
+		else if (myData->solverType == LAYERED_PTVRP_SAFE)
+			mySolver = new Split_Layered_PTVRP_safe(myData);
 		else
 		{
 			cout << "ERROR : no solver with this name" << endl ;
@@ -84,7 +87,8 @@ int main (int argc, char *argv[])
 		    || myData->solverType == LAYERED_PTVRP || myData->solverType == BELLMAN_PTVRP_CONT
 		    || myData->solverType == LAYERED_PTVRP_CONT
 		    || myData->solverType == LAYERED_PTVRP_CONT_FIX
-		    || myData->solverType == BELLMAN_PTVRP_CONT_FIX)
+		    || myData->solverType == BELLMAN_PTVRP_CONT_FIX
+		    || myData->solverType == LAYERED_PTVRP_SAFE)
 		{
 			myData->printSolutionPTVRP() ;
 			// the unsound control is allowed to return an infeasible partition : report, do not throw
