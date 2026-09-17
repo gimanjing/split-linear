@@ -16,7 +16,7 @@ function of distance. Independent integer rounding already breaks that by one un
 the pruning return a wrong answer, and enough to return `NO SOLUTION` on a feasible instance. Anything
 a real duration model adds — travel time that varies by hour, queueing at the depot, driver-hours,
 one-way networks — breaks it without bound. **Two repairs, both implemented and measured:** prune on
-the route *without* the leg home (1.13x), and evict from the deque only on joint dominance (free).
+the route *without* the leg home (1.19x), and evict from the deque only on joint dominance (free).
 Together they leave no assumption about the instance.
 
 **`pop.md`** is the companion note on the *second*, independent defect: the deque evicts on cost
@@ -27,6 +27,11 @@ failure is complete.
 
 **`NOTES.md`** is the research write-up: why Vidal's linear Split does not apply here, what
 replaces it, the full measurements, the lines of attack that failed, and what is still open.
+
+**`reduction.md`** takes up `NOTES.md` §7.2 — can the layered decoder be made cheaper? It gives a
+per-column a priori bound on `K`, shows that layers cannot be merged (the mixed second difference is
+non-zero, and separability is equivalent to it vanishing), shows that the *rounding* rather than the
+multiplier is what breaks the Monge property, and ends with an ordered to-do list.
 
 ## Running it
 
@@ -96,14 +101,15 @@ natural partition of the predecessors.
 
 ## Reading the layer diagnostics
 
-`PTVRP_LAYERED` reports several `K` values, which are not the same thing:
+`PTVRP_LAYERED` reports several `K` values, which are not the same thing. From
+`Instances/Instances 1/a280_01.gt` (`n = 279`, `Q = 100`):
 
 ```
-K FULL TOUR          : 1947   ceil(total demand / Q) -- the naive ceiling
-LAYERS ALLOCATED (K) : 135    deepest layer reached in any column
-MAX LAYER USED       : 15     deepest layer that improved a label
-MAX LAYER ON PATH    : 15     largest m(sigma) in the answer
-LAYER ITERATIONS     : 81445  effective K = 104.15 per column  <- the O(n*K) work
+K FULL TOUR          : 72     ceil(total demand / Q) -- the naive ceiling
+LAYERS ALLOCATED (K) : 48     deepest layer reached in any column
+MAX LAYER USED       : 3      deepest layer that improved a label
+MAX LAYER ON PATH    : 2      largest m(sigma) in the answer
+LAYER ITERATIONS     : 8981   effective K = 32.19 per column  <- the O(n*K) work
 ```
 
 `LAYER ITERATIONS / n` is the quantity that belongs in a complexity claim; it is the analogue of
@@ -182,9 +188,13 @@ instance set.
 ## Instances
 
 - `Instances/*.gt` — the original Vidal files.
-- `Instances/Instances 1/` — 105 instances at 10 capacities (100 to 100000), suffix `_01.._10`.
-- `Instances/Instances 2/`, `Instances 3/` — the same instances at `Q=20` and `Q=10`. Many vendors
-  there have `q_i > Q`, so classic Split cannot solve them at all while PT-VRP can.
+- `Instances/Instances 1/` — 105 tour families at Vidal's 10 capacities (100 to 100000), suffix
+  `_01.._10`, unchanged from the originals apart from the added `MAX_ROUTE` horizon.
+- `Instances/Instances 2/`, `Instances 3/` — the same files with the capacity ladder scaled by
+  0.20 (`Q` = 20 to 20000) and 0.10 (`Q` = 10 to 10000); `rescale_instances.py` is what produced
+  them, and only the `CAPACITY` line differs. At the bottom rungs many vendors have `q_i > Q`, so
+  classic Split cannot solve them at all while PT-VRP can. Across the three folders the sweep
+  covers 16 distinct capacities, 10 to 100000.
 - `Instances/ptvrp_demo_5v.gt` — the 5-vendor worked example used above.
 - `Instances/Counterexamples/` — small instances where the unsound solvers give wrong answers.
   `ce_rounding`, `ce_blatant`, `ce_multiplier`, `ce_infeasible` are `n = 3` and defeat the pruning;
@@ -193,3 +203,24 @@ instance set.
   exhaustive enumeration. See `revival.md`.
 
 Service time is fixed at `PTVRP_SERVICE_TIME` in `Program/Pb_Data.h`; the instance files carry none.
+
+## Sweeps
+
+`sweep_<SOLVER>.csv` in the root, one per solver, nine in all, are `batch_run.py` runs over all
+3,150 instances on the capacity ladder above. The counters in them are exact; the `seconds` column
+is whole-process wall clock including start-up, on a machine that is not the i7-9700K of
+`revival_result.md` §11, so it ranks solvers but does not time them. `Program/pure/` is the
+recording-free build whose own solve clock is meant for timings; its sweep has not been run on the
+restored ladder yet.
+
+---
+
+### Note: earlier figures (pre-ladder instance set)
+
+Until 2026-09-17 the write-ups were measured on a different layout of the same 105 tours:
+`Instances 1` carried the ladder but `Instances 2` and `Instances 3` were flat at `Q = 20` and
+`Q = 10` for all ten suffixes. On that layout 2,829 of 3,150 instances were feasible, the layer
+diagnostics example above read `K FULL TOUR 1947 / LAYERS ALLOCATED 135 / MAX LAYER USED 15 /
+MAX LAYER ON PATH 15 / LAYER ITERATIONS 81445 (effective K 104.15)`, and the sound path-out stop
+cost 1.13x in Bellman. Every number in the current text comes from the nine `sweep_*.csv` files
+on the restored ladder.

@@ -455,15 +455,17 @@ matters and the slow path only has to be right. See §12.
 
 ## 10. What it costs
 
-**On the benchmark — nothing, and not because it fixed instances.** 3,150 instances, `Instances 1–3`:
+**On the benchmark — nothing, and not because it fixed instances.** 3,150 instances, `Instances 1–3`
+on the restored capacity ladder (`sweep_PTVRP_LAYERED_CONT_FIX.csv`, `sweep_PTVRP_LAYERED_SAFE.csv`):
 
 | | `..._CONT_FIX` | **`..._SAFE`** |
 |---|---|---|
-| exact vs. Bellman | 2,829 + 321, exact | 2,829 + 321, exact |
+| exact vs. Bellman | 3,060 + 90, exact | 3,060 + 90, exact |
 | `UNSAFE POPS` / `BLOCKED POPS` | 0 | **0** |
 | `UNSORTED QUERIES` | — | **0** |
-| median `eff_K` | 17.26765 | **17.26765** (identical to 5 d.p.) |
-| total wall clock | 28.0 s | **28.0 s** |
+| median `eff_K` (3,060 feasible) | 4.12133 | **4.12133** (identical to 5 d.p.) |
+| all six layer counters identical | — | **3,060 / 3,060** |
+| total wall clock | 27.7 s | **27.7 s** |
 
 `UNSORTED QUERIES = 0` means no layer ever left the fast path. The guard is free here because it
 never had to act — the 1,214 triangle violations in the TSPLIB tours (0.277% of positions, always
@@ -516,7 +518,7 @@ They are different defects in different parts of the algorithm, and neither impl
 | what breaks it | the leg home shrinking as `j` grows | the leg home growing as `i` grows |
 | symptom | a start dropped too early, answer too expensive | a start discarded for good, answer too expensive or absent |
 | the fix | prune on the path out (`Bout_t`) | evict on joint dominance (`At`) |
-| fires on TSPLIB | 177 revived arcs on 103 of 3,150 instances, 0 answers changed | never, on any of the 3,150 |
+| fires on TSPLIB | 425 revived arcs on 238 of 3,150 instances, 0 answers changed | never, on any of the 3,150 |
 | affects Bellman? | **yes** — the early stop is Bellman's | **no** — Bellman has no deque |
 
 Both trace back to the same root — the triangle inequality failing — but they fail through different
@@ -641,3 +643,23 @@ python3 check_pop.py Instances/Counterexamples/ce_dvrp_unsafe_pop_4v.gt \
 4. **Time windows.** With time windows the feasibility predicate is not a sublevel set of a single
    scalar, so `At` is no longer a sufficient statistic and §3's clause (a) has no one-line form. What
    replaces it is not worked out here.
+
+---
+
+## 15. Note: earlier figures (pre-ladder instance set)
+
+The benchmark rows above were re-measured on 2026-09-17 after `rescale_instances.py` restored
+Vidal's capacity ladder to `Instances 2` and `Instances 3` (scaled by 0.20 and 0.10). Before that
+those two folders were flat at `Q = 20` and `Q = 10`, and §10 and §11 read:
+
+| | `..._CONT_FIX` | `..._SAFE` |
+|---|---|---|
+| exact vs. Bellman | 2,829 + 321 | 2,829 + 321 |
+| `UNSAFE POPS` / `BLOCKED POPS` / `UNSORTED QUERIES` | 0 | 0 / 0 |
+| median `eff_K` | 17.26765 | 17.26765 |
+| total wall clock | 28.0 s | 28.0 s |
+
+and revival fired as 177 revived arcs on 103 instances. Nothing in the argument changed: the guard
+fired zero times on both layouts, and the counterexamples of §6, §7 and the structural sweep of §10
+do not depend on the benchmark folders at all. The `eff_K` median fell from 17.3 to 4.1 because the
+ladder's upper rungs make most instances single-trip, not because of anything in the solver.

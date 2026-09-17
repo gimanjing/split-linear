@@ -16,7 +16,11 @@ accumulated *load* (§8).
 
 **The fix:** two parts, because the violation has two sizes. Stop on the route *without* the leg home,
 and evict from the deque only on **joint** dominance. Sound with no assumption about the instance,
-nothing precomputed, 1.13x in Bellman and 1.18x in the layered decoder (§9).
+nothing precomputed, 1.19x in Bellman and 1.11x in the layered decoder (§9).
+
+**The other defect:** fixing the stop does not make the layered decoder unconditional. Its deque
+evicts on cost alone, which is a separate unsound step with a separate fix. That one has its own
+note: `pop.md`.
 
 **The other defect:** fixing the stop does not make the layered decoder unconditional. Its deque
 evicts on cost alone, which is a separate unsound step with a separate fix. That one has its own
@@ -367,28 +371,30 @@ different sets of instances.
 
 ## 6. How often does this happen in practice?
 
-All 3,150 instances in `Instances/Instances 1,2,3`, three solvers each.
+All 3,150 instances in `Instances/Instances 1,2,3` on the restored capacity ladder (16 capacities,
+10 to 100,000; `sweep_PTVRP.csv`, `sweep_PTVRP_CONT.csv`, `sweep_PTVRP_LAYERED.csv`).
 
-**All three agree on all 3,150.** 2,829 feasible with identical cost strings, 321 infeasible
-unanimously, zero disagreements. The layered control `PTVRP_LAYERED_CONT` agreed too on the
-480 instances with `n <= 600`, where its first `O(n²K)` version was tolerable; the deque-based
-rebuild covers all 3,150 (`revival_result.md`).
+**All three agree on all 3,150.** 3,060 feasible with identical cost strings, 90 infeasible
+unanimously, zero disagreements. The layered control `PTVRP_LAYERED_CONT` agrees on all 3,150 as
+well (`revival_result.md`).
 
-**But the early stop fires on 103 of them.** On those, a route the scan skipped would have improved a
-label when the control evaluated it. It never changed a final answer — improving a label mid-scan is
-necessary but not sufficient, because a later start often reaches the same point just as cheaply.
+**But the early stop fires on 238 of them.** On those, a route the scan skipped would have improved a
+label when the control evaluated it: 425 revived arcs in all, 408 of them improving. It never
+changed a final answer — improving a label mid-scan is necessary but not sufficient, because a later
+start often reaches the same point just as cheaply.
 
-Where it fires:
+Where it fires (share of instances with at least one revived arc):
 
 | instance size | rate | | capacity `Q` | rate |
 |---|---|---|---|---|
-| n < 500 | 0.1% | | 10 | 0.2% |
-| 500 – 2,000 | 1.4% | | 20 | 0.8% |
-| 2,000 – 10,000 | 6.8% | | 100 – 100,000 | 5.7 – 11.4% |
-| 10,000 – 80,000 | **12.6%** | | | |
+| n < 500 | 0.1% | | 10 | 0.0% |
+| 500 – 2,000 | 3.2% | | 20 | 0.5% |
+| 2,000 – 10,000 | 16.3% | | 40 – 50 | 1.9 – 5.7% |
+| 10,000 – 80,000 | **29.2%** | | 100 – 100,000 | 5.4 – 11.9% |
 
 **Size.** Each start crosses the time limit exactly once, so an instance gets `n` chances. More
-vendors, more chances. The per-crossing rate is roughly constant.
+vendors, more chances. Per million crossings the rate is 4.0, 68.1, 44.1 and 24.4 across the four
+size buckets, so it is not flat, but it is of one order of magnitude from 500 vendors up.
 
 **Capacity.** Revival needs `m` to stay the *same* across the step — if the trip count increments,
 the product `d·m` jumps up and swamps the one-unit wobble. At `Q = 10` the load crosses a capacity
@@ -396,12 +402,13 @@ boundary at nearly every vendor, so the window barely exists. At large `Q` it ra
 
 Measured, with `rho = mean demand / Q`:
 
-| | revived routes per million crossings |
-|---|---|
-| `rho < 1` (trip count does not step every vendor) | **38.2** |
-| `rho >= 1` (it does) | **1.1** |
+| | instances | revived routes per million crossings |
+|---|---|---|
+| `rho < 1` (trip count does not step every vendor) | 2,835 | **35.9** |
+| `rho >= 1` (it does) | 315 | **0.8** |
 
-A 35× cliff exactly where the mechanism predicts.
+A 45× cliff exactly where the mechanism predicts. On the ladder `rho >= 1` occurs only at `Q = 10`
+and `Q = 20`, and those 315 instances produced one revived arc between them.
 
 **So the honest summary is two sentences, and both matter:**
 
@@ -534,43 +541,48 @@ quantity they test:
 
 ### What it costs
 
-All 3,150 instances, one machine (`sweep_both_fixes.csv`, 15,750 rows). Exactness is against
-`PTVRP_CONT`, which scans every pair and assumes nothing: **2,829 identical, 321 both-infeasible,
-0 disagreements**, for every solver.
+All 3,150 instances on the restored capacity ladder, one sweep per solver (`sweep_<SOLVER>.csv`,
+whole-process wall clock from `batch_run.py`, one machine). Exactness is against `PTVRP_CONT`, which
+scans every pair and assumes nothing: **3,060 identical, 90 both-infeasible, 0 disagreements**, for
+every solver.
 
 | solver | total | |
 |---|---|---|
-| `PTVRP_LAYERED` | 23.7 s | unsound frontier |
-| `PTVRP_LAYERED_CONT_FIX` | **28.0 s** | **sound frontier**, assumed eviction |
-| `PTVRP_LAYERED_SAFE` | **28.0 s** | **sound frontier and sound eviction** |
-| `PTVRP` | 34.0 s | unsound early stop |
-| `PTVRP_CONT_FIX` | **38.4 s** | **sound early stop** |
-| `PTVRP_CONT` | 781.8 s | no stop — the oracle |
+| `PTVRP_LAYERED` | 24.9 s | unsound frontier |
+| `PTVRP_LAYERED_CONT_FIX` | **27.7 s** | **sound frontier**, assumed eviction |
+| `PTVRP_LAYERED_SAFE` | **27.7 s** | **sound frontier and sound eviction** |
+| `PTVRP` | 70.4 s | unsound early stop |
+| `PTVRP_CONT_FIX` | **83.6 s** | **sound early stop** |
+| `PTVRP_CONT` | 1,280.1 s | no stop — the oracle |
 
-**Soundness costs 1.13× in Bellman and 1.18× in the layered decoder.** Both are ~20× faster than the
-oracle that assumes nothing. The eviction guard on top is free — 28.0 s either way, identical
-`eff_K` — because on metric-up-to-rounding data it never has to act (below).
+**Soundness costs 1.19× in Bellman and 1.11× in the layered decoder.** The Bellman fix stays 15×
+faster than the oracle and the layered one 46×. The eviction guard on top is free — 27.7 s either
+way, identical `eff_K` — because on metric-up-to-rounding data it never has to act (below). The
+totals are start-up dominated at small `n` (2,879 of the 3,150 `PTVRP_LAYERED` runs finish under
+20 ms), so the per-size ratios in `revival_result.md` §6.4 are the ones to quote.
 
-In arcs rather than seconds, over the twelve largest instances per set — scanned per start, against
-where the unsound stop would have ended:
+In arcs rather than seconds, over the twelve largest instances per set — total arcs scanned over
+total starts, against where the unsound stop would have ended:
 
 | set | sound | unsound | overhead | no stop (`n/2`) |
 |---|---|---|---|---|
 | `Instances 1` | 518.2 | 463.4 | 1.12× | 35,504 |
-| `Instances 2` | 11.5 | 6.6 | 1.73× | 35,504 |
-| `Instances 3` | 6.5 | 3.8 | 1.72× | 35,504 |
+| `Instances 2` | 240.7 | 205.5 | 1.17× | 35,504 |
+| `Instances 3` | 167.6 | 138.6 | 1.21× | 35,504 |
 
-The ratio is worse on the low-capacity sets, but read the absolute numbers: 6–12 arcs per start.
-1.7× of almost nothing, which is why the wall clock barely moves.
+Over the whole sweep the sound stop scans 5,174 M arcs against 4,797 M for the unsound one, 1.08×.
+The ratio is worst at the bottom of the ladder — 1.40× at `Q = 10`, 1.32× at `Q = 20` — where the
+absolute numbers are 13 and 20 arcs per start, and it is 1.00× from `Q = 10,000` up, where the
+horizon rather than capacity ends every scan.
 
-And for the layered decoder, the bound recovers nearly everything the *unsound* frontier gave —
+And for the layered decoder, the bound recovers most of what the *unsound* frontier gave —
 median `eff_K`:
 
 | set | no bound | **sound bound** | unsound |
 |---|---|---|---|
 | `Instances 1` | 4.0 | **2.0** | 1.9 |
-| `Instances 2` | 499.7 | **24.2** | 18.5 |
-| `Instances 3` | 998.9 | **30.2** | 29.2 |
+| `Instances 2` | 17.8 | **4.9** | 4.5 |
+| `Instances 3` | 35.1 | **7.1** | 5.9 |
 
 ### What this supersedes
 
@@ -624,9 +636,9 @@ has been blocked, that layer scans for the cheapest feasible entry instead. `BLO
 |---|---|---|
 | `ce_unsafe_pop_5v` (optimum 658) | `NO SOLUTION` | **658** |
 | 60 structurally non-metric instances | 59 / 60 | **60 / 60**, 5,205 pops blocked |
-| 3,150 benchmark instances vs `PTVRP_CONT` | 2,829 identical, 321 both-infeasible, 0 differ | **identical** |
+| 3,150 benchmark instances vs `PTVRP_CONT` | 3,060 identical, 90 both-infeasible, 0 differ | **identical** |
 | `BLOCKED POPS` / `UNSORTED QUERIES` on the benchmark | — | **0 / 0** |
-| total | 28.0 s, median `eff_K` 17.3 | 28.0 s, median `eff_K` 17.3 |
+| total | 27.7 s, median `eff_K` 4.1 | 27.7 s, median `eff_K` 4.1 |
 
 Read the last two rows together. On this benchmark the guard costs nothing **because it never fires**:
 no layer ever leaves the original `O(1)` query. That is the stronger statement — not that the guard
@@ -692,3 +704,32 @@ crossover against Bellman, and the open questions. Revival is §5.8–§5.10 and
 
 Vidal, T. (2016). *Technical note: Split algorithm in O(n) for the capacitated vehicle routing
 problem.* Computers & Operations Research 69, 40–47. arXiv:1508.02759.
+
+---
+
+## 12. Note: earlier figures (pre-ladder instance set)
+
+The benchmark numbers in §6 and §9 were re-measured on 2026-09-17, after `rescale_instances.py`
+restored Vidal's capacity ladder to `Instances 2` and `Instances 3` (scaled by 0.20 and 0.10).
+Before that those two folders were flat at `Q = 20` and `Q = 10` for all ten suffixes. The
+counterexamples, traces and the argument of §1–§5 and §7–§8 do not depend on the benchmark and are
+unchanged. What the earlier text said, for the record:
+
+- **§6.** 2,829 feasible and 321 infeasible; the early stop fired on 103 instances (177 revived
+  arcs, 172 improving); rates 0.1 / 1.4 / 6.8 / 12.6% by size bucket and 0.2% at `Q = 10`, 0.8% at
+  `Q = 20`, 5.7–11.4% from `Q = 100` up; 38.2 against 1.1 revived routes per million crossings
+  either side of `rho = 1`, a 35× cliff.
+- **§9.** Totals 23.7 / 28.0 / 28.0 / 34.0 / 38.4 / 781.8 s for `PTVRP_LAYERED`,
+  `PTVRP_LAYERED_CONT_FIX`, `PTVRP_LAYERED_SAFE`, `PTVRP`, `PTVRP_CONT_FIX`, `PTVRP_CONT`, read as
+  **1.13× in Bellman and 1.18× in the layered decoder**, both ~20× faster than the oracle. Arcs per
+  start on the twelve largest instances: 11.5 / 6.6 (1.73×) on `Instances 2` and 6.5 / 3.8 (1.72×)
+  on `Instances 3`. Median `eff_K` 499.7 / 24.2 / 18.5 on `Instances 2` and 998.9 / 30.2 / 29.2 on
+  `Instances 3` for no bound / sound bound / unsound. Median `eff_K` 17.3 for the two sound layered
+  solvers.
+
+Two readings moved. The order of the two soundness costs is reversed on the ladder — Bellman now
+pays more (1.19×) than the layered decoder (1.11×) — because the upper rungs lengthen Bellman's
+scan while the layered decoder's layer count collapses toward 1 there. And the sound layered bound
+sits 20% above the unsound frontier's `eff_K` on `Instances 3` rather than 3%, though in absolute
+terms that is 7.1 against 5.9 layers per column rather than 30.2 against 29.2. The `Instances 1`
+rows are byte-identical on both layouts and did not move.

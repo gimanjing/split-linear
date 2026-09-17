@@ -207,13 +207,34 @@ unsound baselines they are measured against.
 
 | set | files | n | capacity |
 |---|---|---|---|
-| `Instances/Instances 1` | 1,050 | 28 – 71,008 | 100 … 100,000 (10 values, suffix `_01.._10`) |
-| `Instances/Instances 2` | 1,050 | same points | Q = 20 |
-| `Instances/Instances 3` | 1,050 | same points | Q = 10 |
+| `Instances/Instances 1` | 1,050 | 28 – 71,008 | Vidal's ladder 100 … 100,000 (10 values, suffix `_01.._10`) |
+| `Instances/Instances 2` | 1,050 | same points | the same ladder × 0.20: 20 … 20,000 |
+| `Instances/Instances 3` | 1,050 | same points | the same ladder × 0.10: 10 … 10,000 |
 
-3,150 files, horizon `MAX_ROUTE = 86400`, distances doubling as travel times. In sets 2 and 3 many
-vendors have `q_i > Q`, so classic Split cannot solve them at all while PT-VRP can — those sets are
-the reason the multiplier exists.
+3,150 files, horizon `MAX_ROUTE = 86400`, distances doubling as travel times, 16 distinct capacities
+in all (`rescale_instances.py` produced sets 2 and 3 from set 1 by editing only the `CAPACITY`
+line). At the bottom rungs of sets 2 and 3 many vendors have `q_i > Q`, so classic Split cannot
+solve them at all while PT-VRP can — those rungs are the reason the multiplier exists. Feasible under
+the horizon: 1,030 / 1,024 / 1,006 per set, 3,060 of 3,150.
+
+**Two things about this layout that are easy to misread, and both matter for any claim built on it.**
+
+*There are 105 geometries, not 3,150.* Each point set appears 30 times — ten suffixes in each of the
+three folders — and the arcs are byte-identical across all of them. Anything that is a property of the
+**geometry**, the triangle inequality above all, must be counted over 105 tours, not over files, or the
+figure is inflated thirtyfold. Across the 105 distinct tours the inequality fails at 1,214 of 437,593
+positions (0.277%), on 60% of tours, always by exactly one unit.
+
+*The suffix changes two things at once, in every folder.* It selects a demand draw **and** a rung of
+the capacity ladder together — in set 1, `_01` is Q=100 with q_tot 7,161, `_02` is Q=200 with q_tot
+6,791. So no folder is a controlled capacity sweep on its own: the two factors are confounded and a
+change cannot be attributed to either. Any per-folder aggregate in this document averages over ten
+capacities, and a folder is a *scale factor* (1, 0.20, 0.10), not a capacity.
+
+For a controlled comparison across capacity, hold the suffix fixed across folders: the three `_0k`
+files of a family share the demand vector and differ only in Q, by 1 / 0.20 / 0.10. Grouping the
+sweep by Q instead, as §5.5 does, mixes draws — Q = 100 appears in all three folders, as `_01` of
+set 1, `_03` of set 2 and `_04` of set 3 — but gives 16 rungs from 10 to 100,000.
 
 **Two things about this layout that are easy to misread, and both matter for any claim built on it.**
 
@@ -268,31 +289,34 @@ before any of the scale results below.
 
 ### 5.1 Exactness
 
-Full sweep, all three solvers over all 3,150 files (`full_sweep.csv`, 9,450 rows).
+Full sweep, one CSV per solver over all 3,150 files (`sweep_PTVRP.csv`, `sweep_PTVRP_LINEAR.csv`,
+`sweep_PTVRP_LAYERED.csv`; the exhaustive oracle `sweep_PTVRP_CONT.csv` agrees with `PTVRP` on every
+cost string).
 
-- **2,829** instances are feasible under the horizon; 321 are not, in agreement between the exact
+- **3,060** instances are feasible under the horizon; 90 are not, in agreement between the exact
   and the layered solver.
-- **Layered = exact on 2,829 / 2,829.** No disagreement anywhere, including on the instances where
+- **Layered = exact on 3,060 / 3,060.** No disagreement anywhere, including on the instances where
   the monotonicity warning fires. The rounding violations are real but never changed an answer.
 
 ### 5.2 The cost of using the deque anyway
 
-- **Deque = exact on 389 / 2,829 (13.8%).**
-- Cost excess over the optimum: **median 27.0%, mean 85.8%, maximum 1,080%.**
-- The deque never reports infeasibility (0 / 3,150), including on the 321 instances that genuinely
+- **Deque = exact on 682 / 3,060 (22.3%).** Every one of the 682 is at `Q >= 1,000`; at `Q <= 500`
+  it is exact on 0 of 1,412 feasible instances.
+- Cost excess over the optimum: **median 57.1%, mean 107.6%, maximum 1,080%.**
+- The deque never reports infeasibility (0 / 3,150), including on the 90 instances that genuinely
   have no feasible split. It is not merely inaccurate; it is unsound on feasibility too.
 
-A sharper characterisation of when it happens to be right. Restrict to the 831 instances whose
+A sharper characterisation of when it happens to be right. Restrict to the 1,971 instances whose
 *exact optimum* uses only unit multipliers (`max m(sigma) = 1`), i.e. the PT-VRP optimum coincides
-with a plain CVRP optimum:
+with a plain CVRP optimum (on the ladder that is every feasible instance from `Q = 2,000` up):
 
 | deque's own `max m` on its answer | 1 | 2 | 3 | 4 | 5 | 6+ |
 |---|---|---|---|---|---|---|
-| deque correct | 389 | 0 | 0 | 0 | 0 | 0 |
-| deque wrong | 14 | 110 | 85 | 64 | 39 | 130 |
+| deque correct | 682 | 0 | 0 | 0 | 0 | 0 |
+| deque wrong | 34 | 315 | 247 | 182 | 121 | 390 |
 
-So `max m = 1` at the optimum is **necessary but not sufficient**. In 442 of those 831 cases the
-deque's own path wanders into multi-trip templates and pays for them. In a further 14 cases both
+So `max m = 1` at the optimum is **necessary but not sufficient**. In 1,255 of those 1,971 cases the
+deque's own path wanders into multi-trip templates and pays for them. In a further 34 cases both
 paths are all-unit and the deque is *still* wrong — the scaled propagate and horizon eviction can
 discard a predecessor that would have led to a cheaper all-unit path. The corruption is in the
 pruning, not only in the final answer.
@@ -300,7 +324,7 @@ pruning, not only in the final answer.
 ### 5.3 What the layered repair actually costs
 
 The solver reports several quantities all called "K", which are not the same thing. From
-`a280_01.gt` at Q=2000:
+`Instances 1/a280_01.gt` (`n = 279`, Q = 100):
 
 ```
 K FULL TOUR          : 72     ceil(total demand / Q) -- the naive ceiling
@@ -311,17 +335,22 @@ LAYER ITERATIONS     : 8981   effective K = 32.19 per column   <- the O(n·K) wo
 ```
 
 `eff_K = layer_iterations / n` is the quantity that belongs in a complexity claim; it is the direct
-analogue of Vidal's `B`. Across the 2,829 feasible instances:
+analogue of Vidal's `B`. Across the 3,060 feasible instances (`sweep_PTVRP_LAYERED.csv`):
 
 | quantity | median | mean | max |
 |---|---|---|---|
-| `K_full_tour` (naive) | 287 | 3,150 | 47,663 |
-| `K_allocated` (after horizon bound) | 27 | 38 | 198 |
-| **`eff_K`** (work done) | **15.0** | **21.5** | **127** |
-| `max_layer_used` (work that mattered) | 9 | 9.8 | 60 |
+| `K_full_tour` (naive) | 25 | 760 | 47,400 |
+| `K_allocated` (after horizon bound) | 5 | 12.9 | 188 |
+| **`eff_K`** (work done) | **3.8** | **8.1** | **126** |
+| `max_layer_used` (work that mattered) | 1 | 3.4 | 57 |
 
-The naive ceiling overstates the real work by a factor of ~19 at the median. The horizon bound does
-most of that reduction; the two-pointer partition does the rest.
+The naive ceiling overstates the real work by a factor of ~7 at the median. The horizon bound does
+most of that reduction; the two-pointer partition does the rest. The medians are small because the
+ladder puts most instances at high capacity: 1,971 of the 3,060 feasible optima use no multiplier at
+all; from `Q = 500` up the median `max_layer_used` is 1, and from `Q = 20,000` up so is the median
+`K_allocated`. Per set the
+median `eff_K` is 1.9 / 4.5 / 5.9, and by rung it runs from 28 at `Q = 10` to 1.0 at `Q >= 50,000`
+(§5.5).
 
 ### 5.4 A closed form for `eff_K`
 
@@ -340,48 +369,68 @@ Take the positive root and predict
     eff_K ≈ max(1, L·rho)
 ```
 
-Validated against all 2,829 measured values:
+Validated against all 3,060 measured values (`eff_K` from `sweep_PTVRP_LAYERED.csv`; `c`, `dbar_0`
+and `rho` read from the instance files):
 
-- **r² = 0.934** in log-log, 0.729 on the raw scale
-- **median predicted/observed = 1.025**, p10 0.913, p90 1.465
+- **r² = 0.838** in log-log, 0.813 on the raw scale (Pearson)
+- **median predicted/observed = 1.050**, p10 0.953, p90 2.224
+- 626 instances sit at the floor `eff_K = 1`; on the 2,434 above it the fit is r² 0.812 log-log,
+  median 1.055, p90 1.835
 
 Two consequences follow directly and both are worth stating, because they say the two algorithms
 cannot both be slow on the same instance:
 
 ```
     K / B  =  qbar / Q                (B ≈ L, K ≈ L·rho)
-    B · K  =  L²·rho  ≈  T_H / c      measured median ratio 0.50, so Θ(T_H/c)
+    B · K  =  L²·rho  ≈  T_H / c      measured median ratio 0.46, so Θ(T_H/c)
     min(B, K)  =  O( sqrt(T_H / c) )
 ```
 
+Here `B` is measured as `ARCS UNSOUND STOP / n` from `sweep_PTVRP_CONT_FIX.csv` — the scan length
+of `PTVRP`'s own stop — and `K` as `eff_K`; with the sound stop's `ARCS SCANNED` the median is 0.51.
+The first relation holds too: the median of `(eff_K / B) / rho` is 1.07, and `eff_K / B` itself
+spans 2.32 at `Q = 10` to 0.0005 at `Q = 100,000`, a range of over 4,000× that the flat folders
+could not show (§5.5).
+
 A template can spend the horizon on *length* or on *trips*, not both. Bellman pays for length,
 layered pays for trips, and their product is pinned by the horizon. Dropping the depot legs from the
-derivation (setting `dbar_0 = 0`) over-predicts by a median factor of 1.71, so the depot terms are
-not a refinement — they carry most of the accuracy.
+derivation (setting `dbar_0 = 0`) over-predicts by a median factor of 1.35, so the depot terms are
+not a refinement — they carry a large part of the accuracy.
 
 ### 5.5 Where the crossover is
 
-Wall-clock, layered vs exact Bellman. Restricted to `n >= 3,000` because at small `n` the runs are
-2–4 ms and process startup dominates.
+Wall-clock, layered vs exact Bellman (`sweep_PTVRP_LAYERED.csv` against `sweep_PTVRP.csv`,
+whole-process seconds from `batch_run.py`, feasible instances). Restricted to `n >= 3,000` because
+at small `n` the runs are 2–4 ms and process startup dominates. `B` is `PTVRP`'s scan length per
+start, `ARCS UNSOUND STOP / n` from `sweep_PTVRP_CONT_FIX.csv`.
 
-| Q | instances | median `eff_K` | median `t_bellman` (s) | median `t_layered` (s) | **median speedup** |
-|---|---|---|---|---|---|
-| 10 | 150 | 28.2 | 0.0149 | 0.0214 | **0.70×** |
-| 20 | 230 | 17.9 | 0.0134 | 0.0202 | **0.70×** |
-| 100 | 27 | 13.0 | 0.0170 | 0.0170 | **1.03×** |
-| 200 | 27 | 11.0 | 0.0164 | 0.0145 | **1.23×** |
-| 500 | 27 | 8.3 | 0.0172 | 0.0103 | **1.64×** |
-| 1,000 | 27 | 6.2 | 0.0225 | 0.0096 | **2.40×** |
-| 2,000 | 27 | 4.7 | 0.0256 | 0.0085 | **3.22×** |
-| 5,000 | 27 | 3.2 | 0.0427 | 0.0075 | **4.98×** |
-| 10,000 | 27 | 2.3 | 0.0545 | 0.0068 | **7.29×** |
-| 20,000 | 27 | 1.8 | 0.0670 | 0.0068 | **9.33×** |
-| 50,000 | 27 | 1.0 | 0.0852 | 0.0066 | **16.18×** |
-| 100,000 | 27 | 1.0 | 0.1255 | 0.0064 | **18.28×** |
+| Q | instances | median `eff_K` | median `B` | median `t_bellman` (s) | median `t_layered` (s) | **median speedup** |
+|---|---|---|---|---|---|---|
+| 10 | 15 | 28.3 | 12.0 | 0.0261 | 0.0357 | **0.72×** |
+| 20 | 46 | 17.9 | 15.0 | 0.0225 | 0.0322 | **0.73×** |
+| 40 | 25 | 16.1 | 25.8 | 0.0210 | 0.0277 | **0.79×** |
+| 50 | 27 | 14.9 | 29.8 | 0.0229 | 0.0267 | **0.85×** |
+| 100 | 81 | 13.0 | 51.5 | 0.0230 | 0.0229 | **0.99×** |
+| 200 | 81 | 11.0 | 86.4 | 0.0244 | 0.0198 | **1.24×** |
+| 400 | 27 | 9.0 | 138.6 | 0.0265 | 0.0165 | **1.62×** |
+| 500 | 54 | 8.3 | 158.0 | 0.0288 | 0.0156 | **1.84×** |
+| 1,000 | 81 | 6.2 | 238.3 | 0.0344 | 0.0130 | **2.65×** |
+| 2,000 | 81 | 4.7 | 355.6 | 0.0442 | 0.0116 | **4.02×** |
+| 4,000 | 27 | 3.6 | 516.4 | 0.0579 | 0.0104 | **6.00×** |
+| 5,000 | 54 | 3.2 | 583.1 | 0.0631 | 0.0103 | **6.54×** |
+| 10,000 | 81 | 2.2 | 799.6 | 0.0870 | 0.0095 | **9.73×** |
+| 20,000 | 54 | 1.8 | 1,085.8 | 0.1128 | 0.0090 | **13.69×** |
+| 50,000 | 27 | 1.0 | 1,705.5 | 0.1499 | 0.0088 | **18.34×** |
+| 100,000 | 27 | 1.0 | 1,897.5 | 0.2036 | 0.0088 | **20.36×** |
 
-Crossover sits near **Q ≈ 100**. Below it the layered decoder loses — the per-layer bookkeeping is
-not repaid when `eff_K` is 20–30. Above it, `eff_K` collapses toward 1 while Bellman's `B` climbs,
-exactly as §5.4 predicts, and layered wins by an increasing margin.
+Crossover sits near **Q ≈ 100** (0.99× there, 1.24× at Q = 200). Below it the layered decoder loses
+— the per-layer bookkeeping is not repaid when `eff_K` is 15–28. Above it, `eff_K` collapses toward
+1 while Bellman's `B` climbs, exactly as §5.4 predicts, and layered wins by an increasing margin.
+`B` saturates once the horizon rather than capacity ends the scan: from `Q = 20,000` up the median
+`B` barely moves (1,086 → 1,898 while `Q` grows 5×), and 67 of the 105 families report identical
+`ARCS SCANNED` at `Q` = 20,000, 50,000 and 100,000. The same table for the two *sound* solvers
+(`PTVRP_CONT_FIX` against `PTVRP_LAYERED_SAFE`) crosses at the same rung — 0.93× at Q = 100,
+1.22× at Q = 200 — and reaches 23.4× at Q = 100,000.
 
 The practical reading: the layered decoder is the right choice when capacity is generous relative
 to demand. At `Q = 10` and `Q = 20` — where the multiplier is *most* active and the PT-VRP is most
@@ -575,7 +624,7 @@ later column can still re-admit. This is the direct evidence on "which pointer" 
 and that cost agreement alone could not supply.
 
 **What the sweep says anyway.** On all 3,150 real instances the three solvers agree exactly
-(§5.1), and the early stop skipped an improving arc on 103 of them without ever changing an answer.
+(§5.1), and the early stop skipped an improving arc on 238 of them without ever changing an answer.
 So the correct statement is not "the early stop is safe" but:
 
 > The early stop is **unsound**, demonstrably so at rounding scale, and **empirically harmless on
@@ -596,17 +645,18 @@ There is also a clean counting fact: **every start crosses the horizon exactly o
 exactly `n` chances per instance regardless of `T_H`. The horizon moves *where* along the scan the
 crossing happens, not *how many* crossings there are.
 
-Measured over the 3,150-instance sweep:
+Measured over the 3,150-instance sweep (`sweep_PTVRP_CONT.csv`; 425 revived arcs on 238 instances):
 
-| | revived arcs per million crossings |
-|---|---|
-| `rho < 1` (`m` does not step at every vendor) | **38.2** |
-| `rho >= 1` (`m` steps at every vendor) | **1.1** |
+| | instances | revived arcs per million crossings |
+|---|---|---|
+| `rho < 1` (`m` does not step at every vendor) | 2,835 | **35.9** |
+| `rho >= 1` (`m` steps at every vendor) | 315 | **0.8** |
 
-A 35x cliff at `rho = 1`, exactly where the gate predicts it. Per-instance rates rise 0.2% -> 12.6%
-with `n` simply because there are more crossings, not because the process differs. Caveat: the
-per-crossing rate is not flat across `n` (6.7 / 77 / 33 / 35 per million by size bucket); short tours
-are lower, most likely because many starts never reach the horizon at all.
+A 45x cliff at `rho = 1`, exactly where the gate predicts it; on the ladder `rho >= 1` occurs only at
+`Q = 10` and `Q = 20`, and those 315 instances produced one revived arc. Per-instance rates rise
+0.1% -> 29.2% with `n` simply because there are more crossings, not because the process differs.
+Caveat: the per-crossing rate is not flat across `n` (4.0 / 68 / 44 / 24 per million by size bucket);
+short tours are lower, most likely because many starts never reach the horizon at all.
 
 **Superseded as a repair, not as a measurement.** The suffix bound this section suggested is sound
 but needs an O(n) array rebuilt whenever the tour order changes. The path-out rule (§7.4c) needs
@@ -752,13 +802,21 @@ So the live work is **7.2 and 7.3**, and only 7.3 has a ready experiment.
    (ii) is a referee-proofing chore — scan the instances for a real sign-changing 4-tuple — not a
    question whose answer would change anything here.
 2. **Is there a tighter a priori bound on `K` than the horizon frontier? -- OPEN. Still open, but the
-   frontier is now sound.** §7.4c replaces the unsound frontier with a path-out one at no cost in the
-   bound (median `eff_K` 30.2 against the unsound 29.2), so the question is no longer entangled with
-   correctness. What is still missing is a bound computable *before* the sweep rather than advanced
-   during it. `K_allocated` (median 27)
-   already improves on `ceil(q_tot/Q)` (median 287) by ~10×, but `eff_K` (median 15) and
-   `max_layer_used` (median 9) show there is more slack. A bound computable before the sweep would
+   frontier is now sound.** §7.4c replaces the unsound frontier with a path-out one at small cost in
+   the bound (median `eff_K` 7.1 against the unsound 5.9 on `Instances 3`, 2.0 against 1.9 on
+   `Instances 1`), so the question is no longer entangled with correctness. What is still missing is
+   a bound computable *before* the sweep rather than advanced during it. `K_allocated` (median 5)
+   already improves on `ceil(q_tot/Q)` (median 25) by 5×, but `eff_K` (median 3.8) and
+   `max_layer_used` (median 1) show there is more slack. A bound computable before the sweep would
    let layers be allocated once rather than grown.
+
+   **Partly answered in `reduction.md` §3.** A per-column bound exists and is cheap: layer `k` at
+   column `j` is dead when `path_out(last(W_k(j)), j)·k > T_H`, testable on the window's last start
+   because that one has the shortest path out. Measured against `eff_K` it is **4–6× tighter at
+   `Q = 10` and exactly 1.00× from `Q = 50` up**, so it bounds the *visits* in the regime where the
+   decoder is slowest but never reduces the *allocation* (its per-column max equals `K_allocated`
+   everywhere). `reduction.md` §3.3 also shows §5.4's `K ≈ sqrt(rho·T_H/c)` is the same bound with
+   averages substituted for the real window, so the formula this slot asks for was already in §5.4.
 3. **Does the crossover at `Q ≈ 100` move under a different horizon? -- OPEN. The §5.4 algebra says no.**
    Solving `B·K ≈ T_H/c` together with `K/B = rho = qbar/Q` gives `K ≈ sqrt(rho·T_H/c)` and
    `B ≈ sqrt(T_H/(c·rho))`: both grow as `sqrt(T_H)`, so the *ratio* `B/K = Q/qbar` carries no `T_H`
@@ -794,8 +852,9 @@ So the live work is **7.2 and 7.3**, and only 7.3 has a ready experiment.
    (c) the repair to the pruning, (d) the repair to the eviction. Only (a) is still a measurement.
 
    **(a) Frequency on realistic geometry.** The counterexamples are constructed: the horizon is
-   placed deliberately in the one-unit gap. On the 3,150-instance benchmark the early stop skipped an
-   improving arc 177 times across 103 instances and **never** changed an answer. So the gap between
+   placed deliberately in the one-unit gap. On the 3,150-instance benchmark the early stop skipped a
+   revived arc 425 times across 238 instances, 408 of them improving a label, and **never** changed
+   an answer. So the gap between
    "unsound" and "harmful" is entirely a question of how often `T_H` lands in that window, and this
    benchmark says: not once. Whether that survives a different horizon, a different rounding
    convention, or non-Euclidean travel times is untested. §5.9 predicts the rate is horizon-free;
@@ -809,9 +868,9 @@ So the live work is **7.2 and 7.3**, and only 7.3 has a ready experiment.
 
    `PTVRP_LAYERED_CONT` and `PTVRP_LAYERED_CONT_FIX` both report `REVIVED STARTS` / `REVIVED
    IMPROVING` -- starts that won a layer from behind where the pruned solver's frontier stood. Over
-   all 3,150 instances: **18 revived winners on 18 instances, 2 improving, 0 changing an answer**
-   (20 / 2 / 0 with the bound in place). All 18 sit inside Bellman's 103. So the layered half of this
-   question no longer rests on cost agreement.
+   all 3,150 instances: **36 revived winners on 33 instances, 2 improving, 0 changing an answer**
+   (42 on 39 / 2 / 0 with the bound in place). All 33 sit inside Bellman's 238. So the layered half of
+   this question no longer rests on cost agreement.
 
    **(c) What to do about it -- ANSWERED: patch it, and it is nearly free.** None of the three options
    listed here was taken. The rule that works is simpler than all of them: **prune on the route
@@ -834,21 +893,24 @@ So the live work is **7.2 and 7.3**, and only 7.3 has a ready experiment.
    `PTVRP_LAYERED_CONT_FIX` (`Split_Layered_PTVRP_cont_fix.{h,cpp}`, where the same quantity makes
    *both* one-way pointers sound because `sumDistance` is monotone where `Bt` is not).
 
-   All 3,150 instances against `PTVRP_CONT` (`sweep_both_fixes.csv`, 15,750 rows, one machine):
-   **2,829 identical, 321 both-infeasible, 0 disagreements, 0 `UNSAFE POPS`.**
+   All 3,150 instances against `PTVRP_CONT` (one root `sweep_<SOLVER>.csv` per solver, one machine,
+   whole-process wall clock): **3,060 identical, 90 both-infeasible, 0 disagreements, 0 `UNSAFE
+   POPS`.**
 
    | solver | total | |
    |---|---|---|
-   | `PTVRP_LAYERED` | 23.7 s | unsound frontier |
-   | `PTVRP_LAYERED_CONT_FIX` | **28.0 s** | exact |
-   | `PTVRP` | 34.0 s | unsound early stop |
-   | `PTVRP_CONT_FIX` | **38.4 s** | exact |
-   | `PTVRP_CONT` | 781.8 s | no stop, the oracle |
+   | `PTVRP_LAYERED` | 24.9 s | unsound frontier |
+   | `PTVRP_LAYERED_CONT_FIX` | **27.7 s** | exact |
+   | `PTVRP` | 70.4 s | unsound early stop |
+   | `PTVRP_CONT_FIX` | **83.6 s** | exact |
+   | `PTVRP_CONT` | 1,280.1 s | no stop, the oracle |
 
-   **Soundness costs 1.13x in Bellman and 1.18x in the layered decoder**, and both stay ~20x faster
-   than the oracle. For the layered decoder the bound also restores `eff_K`: median 998.9 -> 30.2 on
-   `Instances 3`, against 29.2 for the unsound frontier. Details in `revival.md` §9 and
-   `revival_result.md` §6.
+   **Soundness costs 1.19x in Bellman and 1.11x in the layered decoder**; the Bellman fix stays 15x
+   faster than the oracle and the layered fix 46x. In arcs rather than seconds the Bellman overhead
+   is 1.08x over the sweep (5,174 M scanned against 4,797 M), 1.40x at `Q = 10` and 1.00x from
+   `Q = 10,000` up. For the layered decoder the bound also restores `eff_K`: median 35.1 -> 7.1 on
+   `Instances 3`, against 5.9 for the unsound frontier; 4.0 -> 2.0 against 1.9 on `Instances 1`.
+   Details in `revival.md` §9 and `revival_result.md` §6.
 
    This supersedes §5.9's proposed suffix bound and the suffix-minimum refinement that followed it.
    Both are sound, and the suffix minimum is tighter, but both need an O(n) array rebuilt whenever
@@ -889,9 +951,9 @@ So the live work is **7.2 and 7.3**, and only 7.3 has a ready experiment.
    |---|---|---|
    | `ce_unsafe_pop_5v` (optimum 658) | `NO SOLUTION` | **658** |
    | 60 structurally non-metric instances | 59 / 60 | **60 / 60**, 5,205 pops blocked |
-   | 3,150 benchmark instances vs `PTVRP_CONT` | 2,829 identical, 321 both-infeasible, 0 differ | **identical** |
+   | 3,150 benchmark instances vs `PTVRP_CONT` | 3,060 identical, 90 both-infeasible, 0 differ | **identical** |
    | `BLOCKED POPS` / `UNSORTED QUERIES` on the benchmark | -- | **0 / 0** |
-   | total, median `eff_K` | 28.0 s, 17.3 | 28.0 s, 17.3 |
+   | total, median `eff_K` (3,060 feasible) | 27.7 s, 4.12 | 27.7 s, 4.12 |
 
    The last two rows are the point, and the stronger reading is not that the guard rescued instances
    here. It is that the guard **never fired**: no layer ever left the `O(1)` query, so the guard is
@@ -910,7 +972,7 @@ So the live work is **7.2 and 7.3**, and only 7.3 has a ready experiment.
    If so, §5.6 and §5.5 carry over unchanged. **(b)** Split is called 10^5-10^6 times on tours
    differing by a few moves, so reuse *across calls* becomes a lever with no analogue in the static
    setting (§8.3). A third issue is unspecified anywhere: how a horizon-infeasible tour is reported
-   to a penalty-based fitness, given that 321 instances are genuinely infeasible and §5.2 shows the
+   to a penalty-based fitness, given that 90 instances are genuinely infeasible and §5.2 shows the
    deque never detects infeasibility at all.
 
 ### Status ledger (2026-09-16)
@@ -933,15 +995,15 @@ A snapshot of what is settled and what is not, so the distinction survives the n
 | The early stop (`break`, `firstTimeLE`) is **unsound** | 4 counterexamples vs exhaustive enumeration (§5.8) | one needs a violation of only **1 unit**; one yields false `NO SOLUTION` |
 | `break` and `firstTimeLE` are different defects | `ce_infeasible`: `PTVRP` wrong, `PTVRP_LAYERED` right | answers "which pointer" (§7.4) |
 | All 3 PT-VRP solvers agree on 3,150/3,150 real instances | full sweep, identical cost strings | agreement is not soundness (§5.8) |
-| Revival is gated by `rho = qbar/Q`, horizon-free | 35x rate cliff at `rho = 1` (§5.9) | per-crossing rate not flat in `n` |
+| Revival is gated by `rho = qbar/Q`, horizon-free | 45x rate cliff at `rho = 1` (§5.9) | per-crossing rate not flat in `n` |
 | Vidal's original Split is unaffected | every guard is load-based (§5.10) | load is monotone by construction |
 | The unsound early stop can be made **exact** by pruning on the path out | 3,150 instances, 0 disagreements vs `PTVRP_CONT` (§7.4c) | needs no assumption and nothing precomputed |
-| Soundness costs 1.13x (Bellman) / 1.18x (layered) | `sweep_both_fixes.csv`, one machine | ~20x faster than the oracle either way |
-| A sound frontier restores the layer bound | median `eff_K` 998.9 -> 30.2 on `Instances 3` | within 3% of what the unsound frontier gave |
-| `firstTimeLE` does mis-step on real instances | 18 revived winners on 18 instances, 2 improving, 0 decisive | answers §7.4b; all 18 inside Bellman's 103 |
+| Soundness costs 1.19x (Bellman) / 1.11x (layered) | root `sweep_*.csv`, one machine, wall clock | 15x and 46x faster than the oracle; 1.08x in arcs for Bellman |
+| A sound frontier restores the layer bound | median `eff_K` 35.1 -> 7.1 on `Instances 3` | within 20% of what the unsound frontier gave (5.9); within 3% on `Instances 1` |
+| `firstTimeLE` does mis-step on real instances | 36 revived winners on 33 instances, 2 improving, 0 decisive | answers §7.4b; all 33 inside Bellman's 238 |
 | The defect is about duration not being a function of distance; rounding is its weakest instance | §3.3 ladder; `structural_violation.gt` violates 46% of positions by a median 156 vs TSPLIB's 1 | the non-rounding sources (traffic, queueing, driver-hours) are argued from the model, not instrumented |
 | The deque back-pop **is** decisive off metric data | `ce_unsafe_pop_5v`: every unguarded layered solver returns `NO SOLUTION` on an instance feasible at 658 | five vendors, checkable by hand (§7.4d) |
-| Joint-dominance eviction closes it, exactly and for free | `PTVRP_LAYERED_SAFE`: 60/60 structural, 3,150/3,150 benchmark, 28.0 s, guard fired 0 times | `At[i] <= At[b]` is exact because `Bt[j]` cancels at fixed `j` |
+| Joint-dominance eviction closes it, exactly and for free | `PTVRP_LAYERED_SAFE`: 60/60 structural, 3,150/3,150 benchmark, 27.7 s, guard fired 0 times | `At[i] <= At[b]` is exact because `Bt[j]` cancels at fixed `j` |
 | The layered decoder now carries **no** instance assumption | (c) + (d) together | the "provided `UNSAFE POPS` = 0" qualifier is retired |
 
 **Open**
@@ -968,9 +1030,10 @@ A snapshot of what is settled and what is not, so the distinction survives the n
 
 ### 8.1 Skip layers that cannot contribute — engineering, ~1.7× median
 
-The diagnostics say the work is not where the cost is: median `eff_K` is 15.0 while median
-`max_layer_used` is 9. The ratio `eff_K / max_layer_used` has **median 1.65, mean 2.55, p90 5.9,
-max 16.0**. On the README's example instance it is 7. Deep layers are allocated, visited and
+The diagnostics say the work is not where the cost is: median `eff_K` is 3.8 while median
+`max_layer_used` is 1. The ratio `eff_K / max_layer_used` has **median 1.89, mean 2.64, p90 5.4,
+max 17.5** over the 3,060 feasible instances. On the README's example instance (`a280_01`,
+`eff_K` 32.2 against `max_layer_used` 3) it is 10.7. Deep layers are allocated, visited and
 contribute nothing.
 
 The fix is bookkeeping: track which layers are live per column and skip the rest. Exactness is
@@ -981,6 +1044,12 @@ Note the ratio is a *lower* bound on an oracle's win, since `max_layer_used` is 
 the per-column useful depth is usually shallower. It is also not fully realisable, since liveness
 must be detected rather than known. The realisable fraction is unknown until implemented — which is
 the argument for implementing it first: it is the cheapest way to find out.
+
+`reduction.md` §2.3 sizes the per-column version directly: over 4,350 sampled columns only 1–5
+layers of the 2–40 visited come within 1% of that column's winner, and **74.7% of columns are won at
+`k = 1`** (87.2% at `k <= 3`). It also puts a cheaper win ahead of this one — selecting the decoder
+on `rho` (`reduction.md` §5.4, §6 item 1), since `B·K = Theta(T_H/c)` means the two decoders are
+never both slow.
 
 ### 8.2 Incremental layer structure between adjacent columns — engineering, ~2–3×
 
@@ -1026,8 +1095,11 @@ analogue in the static benchmark and is not yet a numbered item anywhere.
 - `-horizon` is not a command-line flag. `Pb_Data.cpp:56` takes the horizon from the instance file's
   `MAX_ROUTE`, and `commandline.cpp` parses only `-solver -veh -pen -trace`. §7.3's two-horizon rerun
   needs this; adding the flag is far cheaper than rewriting 6,300 instance files.
-- `full_sweep.csv` (9,450 rows) and `per_instance_K.csv` (2,829 rows) are currently gitignored.
-  Decision pending: commit raw, commit a summary, or leave out and regenerate.
+- The nine root `sweep_<SOLVER>.csv` files (3,150 rows each) are committed and are the data behind
+  every benchmark number here, although `.gitignore` still lists `*.csv`; the earlier combined
+  `full_sweep.csv` and `per_instance_K.csv` were measured on the pre-ladder layout and are gone.
+  The `Program/pure/` sweep, whose `solve_seconds` are the timings meant for quoting, has not been
+  run on the ladder yet.
 - The orientation rule of §6.2 is designed but not implemented. Given §6.2's conclusion, it should
   probably stay unimplemented.
 
@@ -1086,9 +1158,9 @@ a real if weak effect with opposite signs on the two sides. Corrected table in �
 lesson: when a metric has a floor, instances sitting on the floor are not evidence of no effect.
 
 **10.2 "Skipping empty layers is worth ~7×."** That figure came from a single instance (the README
-example, `eff_K = 104` vs `max_layer_used = 15`). The population median is **1.65**, mean 2.55. The
-effort is still worth doing and is still first in §8, but on a ~1.7× expectation, not 7×. Corrected
-in §8.1.
+example, `eff_K = 104` vs `max_layer_used = 15`). The population median is **1.65**, mean 2.55
+(1.89 and 2.64 on the restored ladder, §8.1). The effort is still worth doing and is still first in
+§8, but on a ~1.7–1.9× expectation, not 7×. Corrected in §8.1.
 
 **10.3 `T_H / (2·min d_ret)` as a bound on `K`.** Proposed and discarded: `min d_ret` is tiny on
 these instances, so the bound barely improved on `ceil(q_tot/Q)`. Replaced by the horizon-frontier
@@ -1117,3 +1189,70 @@ takes "Monge" in the SMAWK sense (`Delta <= 0`) will read it as false. State the
 `Q* = qbar·(beta/alpha)`. The general lesson: a relation on a *product* constrains the two factors
 jointly but says nothing about their ratio, and it is the ratio the crossover depends on. Corrected
 in §7.3; still untested.
+
+---
+
+## 11. Note: earlier figures (pre-ladder instance set)
+
+Every benchmark number in §4–§8 was re-derived on 2026-09-17 from the nine root `sweep_*.csv`
+files, measured after `rescale_instances.py` restored Vidal's capacity ladder to `Instances 2` and
+`Instances 3` (scaled by 0.20 and 0.10). Until then those two folders were flat at `Q = 20` and
+`Q = 10` for all ten suffixes; `Instances 1` already carried the ladder and is byte-identical on
+both layouts. The counterexamples (§5.8, §7.4d), the algebra (§2, §5.7), the skew experiment (§5.6,
+run on `Instances 1`) and the failed lines of attack (§6) do not depend on the change. What the
+earlier text said, for the record:
+
+| where | earlier (flat sets 2 and 3) | now (ladder) |
+|---|---|---|
+| §4.1, §5.1 feasible / infeasible | 2,829 / 321 | 3,060 / 90 |
+| §5.2 `PTVRP_LINEAR` exact | 389 / 2,829 (13.8%) | 682 / 3,060 (22.3%) |
+| §5.2 excess median / mean / max | 27.0% / 85.8% / 1,080% | 57.1% / 107.6% / 1,080% |
+| §5.2 optima with `max m = 1`; deque wandered / wrong all-unit | 831; 442 / 14 | 1,971; 1,255 / 34 |
+| §5.3 `K_full_tour` median / mean / max | 287 / 3,150 / 47,663 | 25 / 760 / 47,400 |
+| §5.3 `K_allocated` | 27 / 38 / 198 | 5 / 12.9 / 188 |
+| §5.3 `eff_K` | 15.0 / 21.5 / 127 | 3.8 / 8.1 / 126 |
+| §5.3 `max_layer_used` | 9 / 9.8 / 60 | 1 / 3.4 / 57 |
+| §5.3 naive ceiling over real work | ~19× | ~7× |
+| §5.4 r² log-log / raw | 0.934 / 0.729 | 0.838 / 0.813 |
+| §5.4 predicted/observed median, p10, p90 | 1.025, 0.913, 1.465 | 1.050, 0.953, 2.224 |
+| §5.4 `B·K·c/T_H` median | 0.50 | 0.46 |
+| §5.4 no-depot over-prediction | 1.71× | 1.35× |
+| §5.5 crossover | Q ≈ 100 (1.03× at 100) | Q ≈ 100 (0.99× at 100, 1.24× at 200) |
+| §5.5 speedup at Q = 10 / 20 / 100,000 | 0.70× / 0.70× / 18.28× | 0.72× / 0.73× / 20.36× |
+| §5.8, §7.4a early stop skipped an improving arc | 177 arcs on 103 instances | 425 arcs (408 improving) on 238 |
+| §5.9 per million crossings, `rho < 1` / `>= 1` | 38.2 / 1.1, a 35× cliff | 35.9 / 0.8, a 45× cliff |
+| §5.9 per-instance rate, smallest to largest bucket | 0.2% → 12.6% | 0.1% → 29.2% |
+| §5.9 per-crossing rate by size bucket | 6.7 / 77 / 33 / 35 | 4.0 / 68 / 44 / 24 |
+| §7.2 sound vs unsound frontier, `Instances 3` | 30.2 vs 29.2 | 7.1 vs 5.9 |
+| §7.4b layered revived winners / instances / improving | 18 / 18 / 2 (20 with the bound) | 36 / 33 / 2 (42 on 39 with the bound) |
+| §7.4c totals `LAYERED`, `LAYERED_CONT_FIX`, `PTVRP`, `CONT_FIX`, `CONT` | 23.7 / 28.0 / 34.0 / 38.4 / 781.8 s | 24.9 / 27.7 / 70.4 / 83.6 / 1,280.1 s |
+| §7.4c soundness cost, Bellman / layered | 1.13× / 1.18× | 1.19× / 1.11× |
+| §7.4c fixed solvers vs the oracle | ~20× either way | 15× (Bellman), 46× (layered) |
+| §7.4c `eff_K` `Instances 3`, no bound → sound (unsound) | 998.9 → 30.2 (29.2) | 35.1 → 7.1 (5.9) |
+| §7.4d sound layered solvers | 28.0 s, median `eff_K` 17.3 | 27.7 s, 4.12 |
+| §8.1 `eff_K / max_layer_used` median / mean / p90 / max | 1.65 / 2.55 / 5.9 / 16.0 | 1.89 / 2.64 / 5.4 / 17.5 |
+
+Readings that changed rather than rescaled:
+
+1. **The soundness costs swapped order.** Bellman pays 1.19× and the layered decoder 1.11×, where
+   the flat sets gave 1.13× and 1.18×. On the upper rungs Bellman's scan lengthens (`B` up to 1,900
+   arcs per start) while the layered decoder's layer count falls to 1, so the looser frontier has
+   less to lose. The Bellman figure in arcs is 1.08×.
+2. **The sound frontier is 20% looser than the unsound one on `Instances 3`, not 3%.** The 3% was a
+   `Q = 10` fact; on the ladder the two counts are small (7.1 against 5.9) and the relative gap is
+   larger. On `Instances 1`, unchanged, it is still 2.0 against 1.9.
+3. **`PTVRP_LINEAR` is exact more often (22.3%) and wrong by more (median 57%) at the same time.**
+   The ladder adds many high-capacity, single-trip instances where the deque is correct, and removes
+   the flat `Q = 20` and `Q = 10` bulk where it was wrong by a moderate margin.
+4. **Revival is seen on 238 instances rather than 103, and on 29% of the largest rather than 13%.**
+   The ladder puts every geometry at capacities where `rho < 1`, which §5.9 identifies as where
+   revival lives. The 35× cliff became 45×; the mechanism reads the same.
+5. **The closed form of §5.4 fits worse in log-log (0.838 against 0.934) and better on the raw
+   scale (0.813 against 0.729).** The ladder adds 626 instances pinned at `eff_K = 1`, where the
+   prediction can only over-shoot; p90 of predicted/observed rose from 1.47 to 2.22 (1.84 above the
+   floor).
+
+Nothing on the correctness side moved: 0 disagreements with the oracle, 0 unsafe pops, 0 blocked
+pops, 0 answers changed by revival, on both layouts. Timings in the current text are whole-process
+wall clock from `batch_run.py` on a machine other than the i7-9700K of `revival_result.md` §11;
+the `Program/pure/` solve-time sweep on that machine is still to be run.

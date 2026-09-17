@@ -6,8 +6,11 @@ every pair scanned), and a layered control, `PTVRP_LAYERED_CONT`, that at `O(n²
 480 instances with `n <= 600`.
 
 This file reports the rebuilt layered control over **all 3,150 instances**, and what it says about
-revival, exactness and cost. Data: `sweep_PTVRP_LAYERED_CONT.csv` (this run), compared with
-`sweep_PTVRP_CONT.csv`, `sweep_PTVRP_LAYERED.csv` and `sweep_PTVRP.csv` (commit `5049f5b`).
+revival, exactness and cost. Data: the nine root `sweep_<SOLVER>.csv` files, all measured on the
+restored capacity ladder (`Instances 1` at Vidal's `Q` = 100 … 100,000, `Instances 2` and
+`Instances 3` at 0.20× and 0.10× of it; 16 distinct capacities, 10 to 100,000). `seconds` in
+those files is whole-process wall clock from `batch_run.py`, one solver per sweep, on the machine
+noted in §11; the counters are exact.
 
 ---
 
@@ -82,7 +85,7 @@ frontier past it.
 
 | | instances |
 |---|---|
-| cost identical to `PTVRP_CONT` | **3,150 / 3,150** (2,829 feasible, 321 infeasible) |
+| cost identical to `PTVRP_CONT` | **3,150 / 3,150** (3,060 feasible, 90 infeasible) |
 | cost identical to `PTVRP_LAYERED` | **3,150 / 3,150** |
 | number of templates, `max m` identical to `PTVRP_LAYERED` | 3,150 / 3,150 |
 | timeouts | 0 |
@@ -138,15 +141,16 @@ the violation is unbounded (§8) the counter fires on every instance.
 | | `PTVRP_CONT` (Bellman) | `PTVRP_LAYERED_CONT` |
 |---|---|---|
 | what is counted | every arc behind the `break` | the **winner** of a layer, when behind the frontier |
-| total | 177 revived arcs, 172 improving | 18 revived winners, 2 improving |
-| instances | 103 | 18 |
-| overlap | — | **all 18 are among Bellman's 103** |
+| total | 425 revived arcs, 408 improving | 36 revived winners, 2 improving |
+| instances | 238 | 33 |
+| overlap | — | **all 33 are among Bellman's 238** |
 | answer changed | 0 | 0 |
 
 Every instance where a revived start wins a layer is one where Bellman also sees a revived arc. The
-layered view never finds revival that Bellman misses.
+layered view never finds revival that Bellman misses. (`PTVRP_CONT_FIX` reports the same 425 arcs on
+the same 238 instances, so the Bellman count is independent of which stop is in place.)
 
-The reverse gap, 85 instances, has two possible reasons, and this run does not separate them:
+The reverse gap, 205 instances, has two possible reasons, and this run does not separate them:
 
 - **Different pointers.** `PTVRP_LAYERED`'s window works per layer on `At[i]` alone. It is not the
   same pointer as Bellman's forward `break`, and it can re-admit a start in a later column
@@ -159,10 +163,10 @@ The reverse gap, 85 instances, has two possible reasons, and this run does not s
 
 | size | instances | revived winners | improving |
 |---|---|---|---|
-| n < 500 | 1,380 | 1 | 0 |
-| 500 – 2,000 | 780 | 5 | 0 |
-| 2,000 – 10,000 | 600 | 3 | 0 |
-| n >= 10,000 | 390 | **9** | **2** |
+| n < 500 | 1,380 | 0 | 0 |
+| 500 – 2,000 | 780 | 8 | 0 |
+| 2,000 – 10,000 | 600 | 5 | 0 |
+| n >= 10,000 | 390 | **23** | **2** |
 
 More vendors means more horizon crossings, and more chances. The same trend as `revival.md` §6.
 
@@ -196,58 +200,69 @@ Without a frontier, column `j` visits every layer up to `trips(0, j)`, which gro
 
 | | median | mean | max |
 |---|---|---|---|
-| `eff_K` = layer iterations / n, `PTVRP_LAYERED_CONT` | **188** | 2,692 | 90,602 |
-| `eff_K`, `PTVRP_LAYERED` (with frontier) | **15** | 21.5 | 127 |
-| `eff_K / K_full` | **0.503** | | |
+| `eff_K` = layer iterations / n, `PTVRP_LAYERED_CONT` (3,150 rows) | **13.3** | 535 | 90,127 |
+| `eff_K`, `PTVRP_LAYERED` (with frontier; 3,060 feasible rows) | **3.8** | 8.1 | 126 |
+| `eff_K / K_full` | **0.511** | | |
 
-Run time follows it closely: **seconds ∝ (n · K_full)^0.95, r² = 0.979** (922 runs over 0.05 s). Cost
-per layer iteration is **21 ns** median (p10 15, p90 30). That includes the `trips()` division and
-the infeasible skips.
+Run time follows it closely: **seconds ∝ (n · K_full)^0.93, r² = 0.984** (556 runs over 0.05 s). Cost
+per layer iteration on those runs is **44 ns** median (p10 30, p90 56), whole-process wall clock on
+the machine of §11. That includes the `trips()` division and the infeasible skips.
 
 ### 5.2 The horizon bound, not the layering, is what makes `PTVRP_LAYERED` fast
 
-`PTVRP_LAYERED`'s `eff_K` of 15 comes from two things at once:
+`PTVRP_LAYERED`'s `eff_K` of 3.8 comes from two things at once:
 
 - the layer partition, which is kept here;
 - the horizon cutting the layer loop at `trips(firstFeasible, j)`, which is gone here.
 
-Removing the frontier costs **12× in `eff_K` at the median**. The partition alone does not bound the
-layer count. The horizon does.
+Removing the frontier costs **3.5× in `eff_K` at the median** (13.3 against 3.8; the per-instance
+median of the ratio is 2.5×). On the ladder the gap is widest at the bottom rungs — 35.1 against
+5.9 on `Instances 3` — and closes toward 1 at the top, where `K_full` is itself a handful. The
+partition alone does not bound the layer count. The horizon does.
 
 ### 5.3 `O(n · K_full)` against Bellman's `O(n²)`
 
-`K_full > n` whenever mean demand exceeds `Q`. That is true on **2,099 of 3,150** instances: all
-1,050 at Q = 10, and 1,049 of 1,050 at Q = 20. On those, `n · K_full > n²`, and the layered control
-does more work than the plain Bellman control.
+`K_full > n` whenever mean demand exceeds `Q`. That is true on **315 of 3,150** instances: all
+105 at Q = 10 and all 210 at Q = 20, and none above. On those, `n · K_full > n²`, and the layered
+control does more work than the plain Bellman control.
 
-Median time ratio `PTVRP_LAYERED_CONT / PTVRP_CONT`, instances with n >= 3,000:
+Median time ratio `PTVRP_LAYERED_CONT / PTVRP_CONT`, instances with n >= 3,000 (all rows,
+infeasible included):
 
-| Q | 10 | 20 | 100 | 200 | 500 | 1,000 | 2,000 | 5,000 | ≥ 10,000 |
-|---|---|---|---|---|---|---|---|---|---|
-| ratio | **7.35** | **5.02** | 1.32 | 0.70 | 0.33 | 0.19 | 0.12 | 0.07 | 0.05 – 0.06 |
-| layered faster | 0/290 | 0/290 | 3/29 | 29/29 | 29/29 | 29/29 | 29/29 | 29/29 | 29/29 |
+| Q | 10 | 20 | 40 | 50 | 100 | 200 | 400 | 500 |
+|---|---|---|---|---|---|---|---|---|
+| ratio | **7.66** | **5.25** | **3.10** | **2.55** | 1.28 | 0.67 | 0.36 | 0.29 |
+| layered faster | 0/29 | 0/58 | 0/29 | 0/29 | 3/87 | 87/87 | 29/29 | 58/58 |
+
+| Q | 1,000 | 2,000 | 4,000 | 5,000 | 10,000 | 20,000 | 50,000 | 100,000 |
+|---|---|---|---|---|---|---|---|---|
+| ratio | 0.16 | 0.10 | 0.06 | 0.05 | 0.04 | 0.03 | 0.02 | 0.02 |
+| layered faster | 87/87 | 87/87 | 29/29 | 58/58 | 87/87 | 58/58 | 29/29 | 29/29 |
 
 **Crossover between Q = 100 and Q = 200.** That is the same place as the `PTVRP_LAYERED` vs
 `PTVRP` crossover in NOTES §5.5 (Q ≈ 100), and it follows from the same `K ∝ 1/Q` relation. Above
-it the layered control is up to 20× faster than Bellman; below it, 5–7× slower.
+it the layered control is up to 50× faster than Bellman; at `Q <= 50` it is 2.5–7.7× slower.
 
 Total solver time:
 
 | folder | Q | `PTVRP_LAYERED_CONT` | `PTVRP_CONT` | `PTVRP_LAYERED` |
 |---|---|---|---|---|
-| Instances 1 | 100 – 100,000 | 89 s | 314 s | 8 s |
-| Instances 2 | 20 | 1,599 s | 324 s | 11 s |
-| Instances 3 | 10 | 2,354 s | 295 s | 11 s |
-| **all** | | **4,042 s** | 934 s | 31 s |
+| Instances 1 | 100 – 100,000 | 112 s | 432 s | 7 s |
+| Instances 2 | 20 – 20,000 | 470 s | 425 s | 9 s |
+| Instances 3 | 10 – 10,000 | 759 s | 424 s | 9 s |
+| **all** | | **1,341 s** | 1,280 s | 25 s |
 
-The slowest single run is `Instances 3/ch71009_07`: n = 71,008, K_full = 180,802, 117 s,
-NO SOLUTION.
+The two `O(n²)`-class controls now cost about the same in total: the ladder's upper rungs make
+`K_full` small on most files, so the unbounded layered control is no longer dominated by the flat
+`Q = 10` and `Q = 20` folders. The slowest single run is `Instances 3/ch71009_01`: n = 71,008,
+K_full = 180,818, 142.6 s, NO SOLUTION.
 
 ### 5.4 Infeasible instances are the expensive ones
 
-The 321 NO SOLUTION instances take **2,519 s of the 4,042 s (62%)**. `PTVRP_LAYERED` abandons a
-column the moment its frontier reaches `j`. The continuous control cannot know that nothing will
-revive, so it keeps visiting every layer to the end of the tour.
+The 90 NO SOLUTION instances take **512 s of the 1,341 s (38%)**, 5.7 s each against 0.27 s for a
+feasible one. `PTVRP_LAYERED` abandons a column the moment its frontier reaches `j`. The continuous
+control cannot know that nothing will revive, so it keeps visiting every layer to the end of the
+tour.
 
 This is the honest cost of not breaking. On an instance where nothing is feasible past some point,
 **no-break means no shortcut**.
@@ -256,11 +271,11 @@ This is the honest cost of not breaking. On an instance where nothing is feasibl
 
 | | |
 |---|---|
-| infeasible skips, total | 33.0 × 10⁹, against 195.3 × 10⁹ layer iterations |
-| skips per layer iteration | median **0.36**, mean 1.16, max **432** |
+| infeasible skips, total | 19.1 × 10⁹, against 38.8 × 10⁹ layer iterations |
+| skips per layer iteration | median **0.78**, mean 1.50, max **432** |
 
-The extremes are all at `Q = 100,000` with `K_full <= 4`: `ca4663_10` (432), `ca4663_09` (197),
-`kz9976_10` (149), `rl5934_10`, `d15112_10`.
+The extremes are all in `Instances 1` at `Q >= 50,000` with `K_full <= 4`: `ca4663_10` (432),
+`ca4663_09` (197), `kz9976_10` (149), `rl5934_10` (103), `d15112_10` (98).
 
 With a huge `Q` the load window spans almost the whole prefix. Old starts whose templates are far
 too long pile up at the front of the deque, and every column walks over them again. So the bound is
@@ -300,19 +315,20 @@ Pruning is conservative; the feasibility test stays exact on the true route time
 
 ### 6.1 It is exact, and the bound is recovered
 
-All 3,150 instances against `PTVRP_CONT` (`sweep_both_fixes.csv`): **2,829 identical, 321
-both-infeasible, 0 disagreements, 0 `UNSAFE POPS`.**
+All 3,150 instances against `PTVRP_CONT` (`sweep_PTVRP_LAYERED_CONT_FIX.csv`): **3,060 identical,
+90 both-infeasible, 0 disagreements, 0 `UNSAFE POPS`.**
 
-Median `eff_K`:
+Median `eff_K` (`CONT` and `FIX` over all 1,050 rows of a set; `LAYERED` over its feasible rows,
+since it prints no diagnostics on an infeasible instance):
 
 | set | `CONT` (no bound) | **`FIX` (sound bound)** | `LAYERED` (unsound) |
 |---|---|---|---|
 | `Instances 1` | 4.0 | **2.0** | 1.9 |
-| `Instances 2` | 499.7 | **24.2** | 18.5 |
-| `Instances 3` | 998.9 | **30.2** | 29.2 |
+| `Instances 2` | 17.8 | **4.9** | 4.5 |
+| `Instances 3` | 35.1 | **7.1** | 5.9 |
 
-On `Instances 3` the sound bound cuts the layer count to **3.0%** of the unbounded version, landing
-within 3% of what the unsound frontier achieved.
+On `Instances 3` the sound bound cuts the layer count to **20%** of the unbounded version, landing
+within 20% of what the unsound frontier achieved; on `Instances 1` the two frontiers are within 3%.
 
 ### 6.2 Bellman gets the same rule, in one line
 
@@ -324,84 +340,88 @@ if (pathOut * m > myData->horizon + 1.e-9)
     break ;
 ```
 
-Its own counters give the price in arcs. Twelve largest instances per set, arcs scanned per start
-against where the unsound stop would have ended:
+Its own counters give the price in arcs. Twelve largest instances per set, total arcs scanned over
+total starts, against where the unsound stop would have ended:
 
 | set | sound | unsound | overhead | no stop (`n/2`) |
 |---|---|---|---|---|
 | `Instances 1` | 518.2 | 463.4 | 1.12× | 35,504 |
-| `Instances 2` | 11.5 | 6.6 | 1.73× | 35,504 |
-| `Instances 3` | 6.5 | 3.8 | 1.72× | 35,504 |
+| `Instances 2` | 240.7 | 205.5 | 1.17× | 35,504 |
+| `Instances 3` | 167.6 | 138.6 | 1.21× | 35,504 |
 
-The ratio is worse where capacity is low, but the absolute numbers there are 6–12 arcs per start.
+Over all 3,150 instances the sound stop scans 5,174 M arcs against 4,797 M, 1.08×. By capacity the
+median overhead per instance runs from 1.40× at `Q = 10` (13 against 9 arcs per start) down to
+1.00× from `Q = 10,000` up, where the horizon ends every scan before capacity does.
 
 ### 6.3 What soundness actually costs
 
-All five solvers, one machine, all 3,150 instances:
+All six solvers, one machine, all 3,150 instances (`seconds` summed over each `sweep_<SOLVER>.csv`):
 
 | solver | total | |
 |---|---|---|
-| `PTVRP_LAYERED` | 23.7 s | unsound frontier |
-| **`PTVRP_LAYERED_CONT_FIX`** | **28.0 s** | **exact** |
-| `PTVRP` | 34.0 s | unsound early stop |
-| **`PTVRP_CONT_FIX`** | **38.4 s** | **exact** |
-| `PTVRP_CONT` | 781.8 s | no stop — the oracle |
-| `PTVRP_LAYERED_CONT` | 4,041.5 s | unbounded control (your i7, ≈3,496 s here) |
+| `PTVRP_LAYERED` | 24.9 s | unsound frontier |
+| **`PTVRP_LAYERED_CONT_FIX`** | **27.7 s** | **exact** |
+| `PTVRP` | 70.4 s | unsound early stop |
+| **`PTVRP_CONT_FIX`** | **83.6 s** | **exact** |
+| `PTVRP_CONT` | 1,280.1 s | no stop — the oracle |
+| `PTVRP_LAYERED_CONT` | 1,340.8 s | unbounded control |
 
-**1.18× for the layered decoder, 1.13× for Bellman.** Both about 20× faster than the oracle.
+**1.11× for the layered decoder, 1.19× for Bellman.** The Bellman fix is 15× faster than the oracle
+and the layered fix 46×. The unbounded layered control is 48× slower than its bounded version.
 
-This supersedes §5.2's "the frontier is worth 12× and it is the unsound part". The correct statement
-is: *the frontier is worth 12×, and a sound frontier recovers it for 18%.*
+This supersedes §5.2's "the horizon bound is what makes `PTVRP_LAYERED` fast, and it is the unsound
+part". The correct statement is: *the frontier is worth 3.5× in `eff_K` at the median on the ladder
+(48× in wall clock), and a sound frontier recovers it for 11%.*
 
-### 6.4 Head-to-head rerun: the sound frontier against the unsound one
+### 6.4 The sound frontier against the unsound one, per size and per capacity
 
-§6.3 reads the two solvers off separate sweeps. This is the direct comparison: both solvers on the
-same instance in the same process, `PTVRP_LAYERED_CONT_FIX` first so `gap_vs_first` is the unsound
-decoder's error against the sound one. 6,300 rows in `sweep_layered_vs_contfix.csv`, 34 s wall on the
-machine in §11, three folders in parallel.
+The same-process head-to-head that this section first reported (`sweep_layered_vs_contfix.csv`) was
+measured on the pre-ladder instances and is no longer in the repository. What follows compares the
+two separate root sweeps, `sweep_PTVRP_LAYERED_CONT_FIX.csv` and `sweep_PTVRP_LAYERED.csv`, instance
+by instance.
 
 | | result |
 |---|---|
-| identical cost | **3,150 / 3,150** (2,829 feasible, 321 infeasible) |
-| `gap_vs_first` non-zero | **0 rows** |
+| identical cost | **3,150 / 3,150** (3,060 feasible, 90 infeasible) |
+| identical template count and `max m` | **3,150 / 3,150** |
 | `PTVRP_LAYERED_CONT_FIX` vs the `PTVRP_CONT` oracle | **3,150 / 3,150** identical |
 | `UNSAFE POPS` | 0 everywhere |
 
-**What soundness costs, measured side by side: 1.08× overall** (39.6 s against 36.7 s). The ratio
-grows with instance size, because at small `n` both runs are a few milliseconds and process startup
-dominates:
+**What soundness costs: 1.11× overall** (27.7 s against 24.9 s). The ratio grows with instance
+size, because at small `n` both runs are a few milliseconds and process startup dominates:
 
 | size | `..._CONT_FIX` | `PTVRP_LAYERED` | ratio |
 |---|---|---|---|
-| n < 500 (1,380) | 7.9 s | 8.1 s | 0.96× |
-| 500 – 2,000 (780) | 6.3 s | 6.2 s | 1.02× |
-| 2,000 – 10,000 (600) | 9.6 s | 8.8 s | 1.10× |
-| n >= 10,000 (390) | 15.8 s | 13.6 s | **1.16×** |
+| n < 500 (1,380) | 3.5 s | 3.5 s | 1.00× |
+| 500 – 2,000 (780) | 3.3 s | 3.2 s | 1.06× |
+| 2,000 – 10,000 (600) | 7.1 s | 6.3 s | 1.13× |
+| n >= 10,000 (390) | 13.8 s | 12.0 s | **1.15×** |
 
-Per-instance medians at `n >= 3,000` are 1.18× at `Q = 10`, 1.19× at `Q = 20` and 1.23× at `Q = 100`,
-falling to 1.0–1.1× above that. So **§6.3's 1.18× is the right figure for instances where the work is
-real**, and the 1.08× total is diluted by the 2,160 instances that finish in milliseconds. Quote the
-per-size number, not the total.
+Per-instance medians at `n >= 3,000` are 1.21× at `Q = 10`, 1.21× at `Q = 20`, 1.23× at `Q = 40`
+and 1.19× at `Q = 100`, falling through 1.16× at `Q = 200` to 1.04–1.08× from `Q = 4,000` up. So
+**1.2× is the right figure for the low-capacity instances where the layers do real work**, and the
+1.11× total is diluted both by the 2,160 instances that finish in milliseconds and by the upper
+rungs, where the layer count is near 1 for either frontier. Quote the per-size, per-capacity
+number, not the total.
 
 The source of the difference is unchanged from §6.1 — the sound frontier bounds the layer count
-slightly less tightly:
+slightly less tightly (both rows over the 3,060 feasible instances, the only ones on which
+`PTVRP_LAYERED` prints diagnostics):
 
 | | median `eff_K` | mean | max | median `K_allocated` |
 |---|---|---|---|---|
-| `PTVRP_LAYERED_CONT_FIX` | **17.3** | 25.5 | 135 | 33 |
-| `PTVRP_LAYERED` | **15.0** | 21.5 | 127 | 27 |
+| `PTVRP_LAYERED_CONT_FIX` | **4.12** | 9.50 | 133 | 6 |
+| `PTVRP_LAYERED` | **3.78** | 8.09 | 126 | 5 |
 
-One caveat on that comparison: `PTVRP_LAYERED` throws before printing its diagnostics on the 321
-infeasible instances, so its `eff_K` statistics cover 2,829 instances against the fixed solver's
-3,150.
+Counters on this run: revived layer winners on **39** instances (42 winners), 2 improving a label,
+0 answers changed; `INFEASIBLE SKIPS` 81.7 M across 2,178 instances — more than two orders of
+magnitude below the 19.1 × 10⁹ of the unbounded control in §5.5, which is the bound doing its work.
+The 39 instances against §4.1's 33 for `PTVRP_LAYERED_CONT` is a small unexplained difference: the
+two solvers replay the frontier under different layer bounds, so they do not have to agree, but it
+has not been checked. All 39 are among Bellman's 238.
 
-Counters on this run: revived layer winners on **20** instances, 2 improving a label, 0 answers
-changed; `INFEASIBLE SKIPS` 60.9 M across 2,653 instances — three orders of magnitude below the
-33.0 × 10⁹ of the unbounded control in §5.5, which is the bound doing its work. The 20 instances
-against §4.1's 18 for `PTVRP_LAYERED_CONT` is a small unexplained difference: the two solvers replay
-the frontier under different layer bounds, so they do not have to agree, but it has not been checked.
-
-The slowest single run is 0.13 s (`ch71009`, n = 71,008), against 117 s for the unbounded control.
+The slowest single run is 0.19 s (`Instances 3/ch71009_03`, n = 71,008), against 142.6 s for the
+unbounded control.
 
 ---
 
@@ -410,15 +430,17 @@ The slowest single run is 0.13 s (`ch71009`, n = 71,008), against 117 s for the 
 1. **Correct.** Right on all four counterexamples. Identical to the exact `PTVRP_CONT` on all 3,150
    instances. With zero unsafe pops everywhere, it is exact by construction **on this benchmark**
    (§3) — a conditional statement, and §8 is where the condition fails.
-2. **Revival is real but never decisive here.** 18 instances have a layer won by a revived start,
-   2 of those improve a label, and 0 change an answer. All 18 are inside Bellman's 103.
-3. **Without a bound, cost is `Θ(n · K_full)`, measured.** Exponent 0.95, 21 ns per layer visit.
-   Faster than Bellman's `O(n²)` control for Q >= 200, slower for Q <= 100, where `K_full` exceeds `n`.
-4. **The frontier is worth 12× in `eff_K` — and it need not be unsound.** Pruning on the path out
-   instead of the full route restores the bound with no assumption about the instance (§6). Median
-   `eff_K` on `Instances 3` goes 998.9 -> 30.2, against 29.2 for the unsound frontier.
-5. **Soundness costs 1.18× (layered) and 1.13× (Bellman)**, not the 169× the unbounded control needed.
-   Both remain ~20× faster than the oracle that assumes nothing (§6.3).
+2. **Revival is real but never decisive here.** 33 instances have a layer won by a revived start,
+   2 of those improve a label, and 0 change an answer. All 33 are inside Bellman's 238.
+3. **Without a bound, cost is `Θ(n · K_full)`, measured.** Exponent 0.93, 44 ns per layer visit on
+   the machine of §11. Faster than Bellman's `O(n²)` control for Q >= 200, slower for Q <= 100;
+   `K_full` exceeds `n` only at Q <= 20.
+4. **The frontier is worth 3.5× in `eff_K` at the median, 48× in wall clock — and it need not be
+   unsound.** Pruning on the path out instead of the full route restores the bound with no
+   assumption about the instance (§6). Median `eff_K` on `Instances 3` goes 35.1 -> 7.1, against 5.9
+   for the unsound frontier.
+5. **Soundness costs 1.11× (layered) and 1.19× (Bellman)**, not the 48× the unbounded control needs.
+   The fixed solvers remain 46× and 15× faster than the oracle that assumes nothing (§6.3).
 6. **The back-pop was the remaining assumption, and it is now closed too.** It is counted
    (`UNSAFE POPS`) and never fires on this benchmark — but it fires on every structurally non-metric
    instance, and on `ce_unsafe_pop_5v` it loses the answer outright, turning an optimum of 658 into
@@ -591,9 +613,9 @@ per-layer flag rather than a rewrite, and it is confined to layers where the gua
 | `ce_unsafe_pop_5v` (optimum 658) | `NO SOLUTION` | **658**, 1 pop blocked |
 | the four §2 counterexamples, both demos | correct | correct |
 | 60 structurally non-metric instances | 59 / 60 | **60 / 60**, 5,205 pops blocked |
-| 3,150 benchmark instances vs `PTVRP_CONT` | 2,829 identical, 321 both-infeasible, 0 differ | **identical** |
+| 3,150 benchmark instances vs `PTVRP_CONT` | 3,060 identical, 90 both-infeasible, 0 differ | **identical** |
 | `BLOCKED POPS` / `UNSORTED QUERIES` on the benchmark | — | **0 / 0** |
-| total, median `eff_K` | 28.0 s, 17.3 | 28.0 s, 17.3 |
+| total, median `eff_K` (3,060 feasible) | 27.7 s, 4.12 | 27.7 s, 4.12 |
 
 Read the last three rows together, because the stronger claim is in them. On this benchmark the guard
 costs nothing **because it never has to act** — `UNSORTED QUERIES = 0` means no layer ever left the
@@ -619,19 +641,21 @@ done
 
 ## 9. Open, following from this
 
-- **Split the 85-instance gap (§4.1).** Count *every* feasible start behind the replayed frontier, not
-  only layer winners. That separates "different pointer" from "not the winner". **Still open.**
+- **Split the 205-instance gap (§4.1).** Count *every* feasible start behind the replayed frontier,
+  not only layer winners. That separates "different pointer" from "not the winner". **Still open.**
 - **Look for an instance with `UNSAFE POPS > 0` — ANSWERED (§8, §8.1), and then patched (§8.2).**
   `structural_violation.gt` fires the counter on 60 of 60 instances; `ce_unsafe_pop_5v.gt` is five
   vendors where the back-pop turns an optimum of 658 into `NO SOLUTION`. So the answer is that the
   back-pop can genuinely lose the answer, not merely that it is unprovable. `PTVRP_LAYERED_SAFE`
   closes it with a joint-dominance eviction that is exact and, on this benchmark, free.
-- **A sound frontier would recover most of the 12× — ANSWERED (§6).** Not by the suffix sum `D[j]`
-  that `revival.md` §9 first proposed, but by pruning on the path out, which needs nothing
-  precomputed and applies unchanged to both decoders. Measured at 1.18× and 1.13×.
+- **A sound frontier would recover most of what the unsound one gives — ANSWERED (§6).** Not by the
+  suffix sum `D[j]` that `revival.md` §9 first proposed, but by pruning on the path out, which needs
+  nothing precomputed and applies unchanged to both decoders. Measured at 1.11× (layered) and 1.19×
+  (Bellman) in wall clock, 1.08× in arcs for Bellman.
 - **Infeasible instances (§5.4) — largely answered.** The path-out bound is exactly such a lower
-  bound on time, and it fires on instances where nothing can fit: the 321 infeasible instances now
-  cost the fixed solvers roughly what feasible ones do, instead of a full unbounded scan.
+  bound on time, and it fires on instances where nothing can fit: the 90 infeasible instances cost
+  the fixed layered solvers 14 ms each against 9 ms for a feasible one, instead of the 5.7 s an
+  unbounded scan spends on them.
 - **Does the fix hold off this benchmark? — partly measured (§8).** Off *metric* data it now is: 60
   structurally non-metric instances, `PTVRP_CONT_FIX` 60/60 and `PTVRP_LAYERED_SAFE` 60/60. What is
   still untested is a different **horizon** — every run here is `T_H = 86,400`. The two-horizon rerun
@@ -681,7 +705,15 @@ for d in 1 2 3; do tail -n +2 cf_$d.csv >> sweep_layered_vs_contfix.csv; done
 
 ## 11. Machine and environment
 
-Every timing in this file comes from one machine:
+**Timings in the current revision (§5, §6) come from the root `sweep_*.csv` files, which were run
+after the capacity ladder was restored on a machine other than the one below; the commit messages
+record it as roughly 1.5× slower on identical single runs.** They are whole-process wall clock from
+`batch_run.py`, one solver per sweep, and are meant for ratios between solvers on the same
+instances, not for absolute figures. The recording-free build in `Program/pure/`, which prints its
+own solve time, has not yet been swept on the ladder; when it is, on the machine below, its
+`solve_seconds` supersede these.
+
+Every timing in the earlier revision of this file came from one machine:
 
 | | |
 |---|---|
@@ -693,10 +725,71 @@ Every timing in this file comes from one machine:
 
 Three parallel processes on 8 threads leave the cores oversubscribed only by memory bandwidth, not by
 count, but the runs are not isolated: an instance timed alongside two others is slower than the same
-instance timed alone. Single-instance measurements quoted in the text (§5.1's 21 ns per layer visit,
-§6.4's slowest run) were taken with nothing else running.
+instance timed alone. Single-instance measurements quoted in that revision (its 21 ns per layer
+visit in §5.1, its slowest run in §6.4) were taken with nothing else running.
 
-Timing note, carried forward: the solver seconds in §5.3's table come from the earlier sweep in commit
-`5049f5b`, which ran under the same setup but not in the same session. Treat those ratios as
-indicative to within tens of percent. Every conclusion in this file rests on ratios of 5× or more, on
-the same-process comparison of §6.4, or on cost agreement — not on small timing differences.
+Timing note, carried forward: every conclusion in this file rests on ratios of 5× or more, on
+per-instance counters, or on cost agreement — not on small timing differences. The soundness ratios
+of §6.3 and §6.4 (1.1–1.2×) are the one place a small timing difference is quoted, and there the
+arc and layer counters of §6.1–§6.2 carry the claim.
+
+---
+
+## 12. Note: earlier figures (pre-ladder instance set)
+
+This file was re-measured on 2026-09-17 after `rescale_instances.py` restored Vidal's capacity
+ladder to `Instances 2` and `Instances 3` (scaled by 0.20 and 0.10). Before that, those folders
+were flat at `Q = 20` and `Q = 10` for all ten suffixes, `Instances 1` already carried the ladder,
+and 2,829 of 3,150 instances were feasible (321 not). `Instances 1` is byte-identical on both
+layouts and its rows did not move. What the earlier text said, for the record:
+
+- **§4.** 177 revived arcs (172 improving) on 103 instances for Bellman; 18 revived layer winners
+  on 18 instances (1 / 5 / 3 / 9 by size bucket), 2 improving, all inside Bellman's 103; reverse
+  gap 85 instances.
+- **§5.** `eff_K` of the unbounded control median 188, mean 2,692, max 90,602 against 15 / 21.5 /
+  127 with the frontier; `eff_K / K_full` 0.503; seconds ∝ `(n·K_full)^0.95`, r² 0.979 over 922
+  runs; 21 ns per layer iteration (p10 15, p90 30); the frontier worth 12× at the median.
+  `K_full > n` on 2,099 instances (all 1,050 at `Q = 10`, 1,049 at `Q = 20`). Time ratio of the
+  layered control to Bellman 7.35 / 5.02 / 1.32 / 0.70 / 0.33 / 0.19 / 0.12 / 0.07 / 0.05–0.06 at
+  `Q` = 10 / 20 / 100 / 200 / 500 / 1,000 / 2,000 / 5,000 / ≥10,000, layered faster 0/290, 0/290,
+  3/29 then 29/29; totals 89 / 1,599 / 2,354 s = 4,042 s against 314 / 324 / 295 = 934 s for
+  Bellman and 8 / 11 / 11 = 31 s for `PTVRP_LAYERED`; slowest run `Instances 3/ch71009_07`,
+  `K_full` 180,802, 117 s. The 321 infeasible instances took 2,519 s of 4,042 (62%). Infeasible
+  skips 33.0 × 10⁹ against 195.3 × 10⁹ iterations, median 0.36 per iteration, mean 1.16.
+- **§6.** Median `eff_K` 499.7 / 24.2 / 18.5 on `Instances 2` and 998.9 / 30.2 / 29.2 on
+  `Instances 3` for no bound / sound bound / unsound, read as "3.0% of the unbounded version,
+  within 3% of the unsound frontier". Arcs per start over the twelve largest instances 11.5 / 6.6
+  (1.73×) on `Instances 2` and 6.5 / 3.8 (1.72×) on `Instances 3`. Totals 23.7 / 28.0 / 34.0 /
+  38.4 / 781.8 / 4,041.5 s for `PTVRP_LAYERED`, `PTVRP_LAYERED_CONT_FIX`, `PTVRP`,
+  `PTVRP_CONT_FIX`, `PTVRP_CONT`, `PTVRP_LAYERED_CONT`, read as **1.18× layered and 1.13×
+  Bellman**, both ~20× faster than the oracle, and "a sound frontier recovers the 12× for 18%".
+  The same-process head-to-head of §6.4 (`sweep_layered_vs_contfix.csv`, 6,300 rows, 34 s) gave
+  1.08× overall, 0.96 / 1.02 / 1.10 / 1.16× by size bucket, 1.18–1.23× per instance at `Q <= 100`;
+  median `eff_K` 17.3 (mean 25.5, max 135, `K_allocated` 33) against 15.0 (21.5, 127, 27);
+  revived winners on 20 instances; infeasible skips 60.9 M across 2,653 instances; slowest run
+  0.13 s.
+- **§7, §8.2.** The same figures restated: 18 revived winners, exponent 0.95 and 21 ns, the
+  frontier worth 12×, soundness 1.18× / 1.13× "not the 169× the unbounded control needed", and
+  28.0 s / median `eff_K` 17.3 for both sound layered solvers.
+
+Readings that changed, as against readings that merely rescaled:
+
+1. **The two soundness costs swapped order.** Bellman now pays more (1.19×) than the layered
+   decoder (1.11×). The upper rungs lengthen Bellman's per-start scan (median 320 arcs per start
+   over all instances at `Q >= 20,000`, 1,900 on those with `n >= 3,000` at `Q = 100,000`) while the
+   layered decoder's layer count falls toward 1 there, so the layered decoder has less to lose from
+   a looser frontier.
+2. **The sound frontier is looser than the unsound one by 20% on `Instances 3`, not 3%.** The old
+   3% was measured at `Q = 10` only, where both frontiers allocate ~30 layers; on the ladder the
+   relative gap is larger because the counts are small (7.1 against 5.9).
+3. **The unbounded layered control is no longer the slow one.** It took 4.3× the oracle's time on
+   the flat folders and takes 1.05× on the ladder, because `K_full > n` now holds on 315 instances
+   rather than 2,099. The `Θ(n · K_full)` law itself is unchanged (exponent 0.93 against 0.95).
+4. **Revival is seen more often, not less.** 238 instances against 103, and 29% of the largest
+   instances against 13%. The ladder puts every geometry at high capacity, where `rho < 1` and
+   the multiplier does not step at every vendor, which is the regime §5.9 of `NOTES.md` predicts
+   revival lives in. The per-crossing rate either side of `rho = 1` moved from 38.2 / 1.1 to
+   35.9 / 0.8.
+
+Nothing in the correctness story moved: 0 disagreements, 0 unsafe pops, 0 blocked pops and 0
+answers changed by revival on both layouts.
