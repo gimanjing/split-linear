@@ -7,17 +7,23 @@ Run from the repository root, after 'make -C Program/pure':
   python3 Program/pure/run_pure.py --solver PTVRP_CONT_FIX --limit 20
 
 Writes <out-dir>/sweep_<SOLVER>.csv, one row per instance. Columns : instance, n, Q, horizon, solver,
-cost (or NO SOLUTION / TIMEOUT), templates, solve_seconds (the solver's own clock around solve() only),
-wall_seconds (the whole process, including start-up and parsing).
+cost (or NO SOLUTION / TIMEOUT), templates, solve_seconds (the solver's own clock around solve() only,
+median over --repeat runs), solve_seconds_min, solve_seconds_spread ((max-min)/median), repeats, and
+wall_seconds (the whole process, including start-up and parsing, averaged over the repeats).
+
+solve_seconds is the column to quote. wall_seconds is start-up dominated -- on a fast machine the
+floor is a couple of milliseconds, which is more than most instances need to solve, so wall_seconds
+measures the process, not the algorithm.
 
 Runs are strictly sequential so that no two solves compete for the machine.
 """
-import argparse, csv, glob, os, random, re, subprocess, sys, time
+import argparse, csv, glob, os, random, re, statistics, subprocess, sys, time
 
 ALL_SOLVERS = ["PTVRP", "PTVRP_CONT_FIX", "PTVRP_LINEAR", "PTVRP_LAYERED", "PTVRP_LAYERED_SAFE",
                "PTVRP_LAYERED_CONT_FIX", "PTVRP_CONT", "PTVRP_LAYERED_CONT"]   # slow ones last
 DIRS = ["Instances/Instances 1", "Instances/Instances 2", "Instances/Instances 3"]
-FIELDS = ["instance", "n", "Q", "horizon", "solver", "cost", "templates", "solve_seconds", "wall_seconds"]
+FIELDS = ["instance", "n", "Q", "horizon", "solver", "cost", "templates", "solve_seconds",
+          "solve_seconds_min", "solve_seconds_spread", "repeats", "wall_seconds"]
 
 
 def read_header(path):
@@ -33,28 +39,46 @@ def read_header(path):
         return "", "", ""
 
 
-def run_one(binary, path, solver, timeout):
-    t0 = time.perf_counter()
-    try:
-        proc = subprocess.run([binary, path, "-solver", solver],
-                              capture_output=True, text=True, timeout=timeout or None)
-    except subprocess.TimeoutExpired:
-        return {"cost": "TIMEOUT", "templates": "", "solve_seconds": "", "wall_seconds": timeout}
-    wall = time.perf_counter() - t0
-    out = proc.stdout
-    if proc.returncode != 0:
-        sys.exit(f"solver failed on {path} ({solver}): {proc.stderr.strip()}")
+def run_one(binary, path, solver, timeout, repeat=1):
+    """One instance, measured `repeat` times.
+
+    SOLVE TIME already excludes process start-up and parsing, so repeating only has to
+    beat scheduler noise. We report the median as the headline, plus the minimum (the
+    least-disturbed run) and the spread, so a reader can see whether the median is stable.
+    """
+    times, wall_total, out = [], 0.0, ""
+    for _ in range(max(1, repeat)):
+        t0 = time.perf_counter()
+        try:
+            proc = subprocess.run([binary, path, "-solver", solver],
+                                  capture_output=True, text=True, timeout=timeout or None)
+        except subprocess.TimeoutExpired:
+            return {"cost": "TIMEOUT", "templates": "", "solve_seconds": "",
+                    "solve_seconds_min": "", "solve_seconds_spread": "", "repeats": len(times),
+                    "wall_seconds": timeout}
+        wall_total += time.perf_counter() - t0
+        out = proc.stdout
+        if proc.returncode != 0:
+            sys.exit(f"solver failed on {path} ({solver}): {proc.stderr.strip()}")
+        m = re.search(r"SOLVE TIME : ([\d.eE+-]+)", out)
+        if m:
+            times.append(float(m.group(1)))
 
     def grab(pattern):
         m = re.search(pattern, out)
         return m.group(1) if m else ""
 
     cost = grab(r"SOLUTION COST : ([\d.eE+-]+)")
+    med = statistics.median(times) if times else ""
     return {
         "cost": float(cost) if cost else "NO SOLUTION",
         "templates": grab(r"NB TEMPLATES : (\d+)"),
-        "solve_seconds": grab(r"SOLVE TIME : ([\d.eE+-]+)"),
-        "wall_seconds": round(wall, 6),
+        "solve_seconds": f"{med:.9f}" if times else "",
+        "solve_seconds_min": f"{min(times):.9f}" if times else "",
+        # max-min over the median, i.e. how wide the repeats are relative to the number reported
+        "solve_seconds_spread": f"{(max(times) - min(times)) / med:.4f}" if times and med > 0 else "",
+        "repeats": len(times),
+        "wall_seconds": round(wall_total / max(1, repeat), 6),
     }
 
 
@@ -67,6 +91,9 @@ def main():
     ap.add_argument("--limit", type=int, help="run only this many instances per folder")
     ap.add_argument("--seed", type=int, default=0, help="sampling seed used with --limit")
     ap.add_argument("--timeout", type=float, default=0, help="per-run timeout in seconds, 0 for no limit")
+    ap.add_argument("--repeat", type=int, default=1,
+                    help="measure each instance this many times and report the median (default 1). "
+                         "Use 3 or more for numbers that go in a paper.")
     args = ap.parse_args()
 
     if not os.path.exists(args.binary):
@@ -94,7 +121,7 @@ def main():
             w.writeheader()
             for idx, path in enumerate(files, 1):
                 n, Q, horizon = headers[path]
-                row = run_one(args.binary, path, solver, args.timeout)
+                row = run_one(args.binary, path, solver, args.timeout, args.repeat)
                 row.update({"instance": os.path.relpath(path), "n": n, "Q": Q, "horizon": horizon, "solver": solver})
                 w.writerow(row)
                 fh.flush()

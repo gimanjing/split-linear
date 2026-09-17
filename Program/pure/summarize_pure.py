@@ -1,16 +1,31 @@
 #!/usr/bin/env python3
 """Summarise a Program/pure sweep. Run from the repository root after run_pure.py.
 
-Writes two files into the sweep folder (default Pure/) :
+Writes three files into the sweep folder (default Pure/) :
 
-  summary.csv            cat, solver, match, feasible, infeasible, match ratio, instance 1/2/3 (s), total (s)
-                         match is agreement with PTVRP_CONT (the oracle), counting a shared cost and a
-                         shared NO SOLUTION alike; the oracle's own match is '-'. Times are solve_seconds.
+  summary.csv        cat, solver, match, feasible, infeasible, match ratio, solve seconds, and the
+                     spread of the repeated measurements. Match is agreement with PTVRP_CONT (the
+                     oracle), counting a shared cost and a shared NO SOLUTION alike; the oracle's own
+                     match is '-'.
 
-  check_vs_original.csv  for each solver, how many costs equal the original sweep_<SOLVER>.csv at the
-                         repository root -- the recording-free build must reproduce every answer.
+  by_capacity.csv    the same timings broken down by vehicle capacity Q, which is the axis the
+                     instances actually vary along. Vidal's originals put a ten-rung capacity ladder
+                     in the _01.._10 suffix and the three folders scale that ladder by 1, 0.20 and
+                     0.10, so a folder is a scale factor, not a capacity. Grouping by folder -- which
+                     this script used to do -- mixes every rung together and says nothing.
+
+  check_vs_original.csv   for each solver, how many costs equal the root sweep_<SOLVER>.csv. The
+                     recording-free build must reproduce every answer the instrumented one gives.
+                     Skipped for any solver with no root sweep present.
+
+Quote solve_seconds, never wall_seconds : wall_seconds includes process start-up, whose floor is a
+couple of milliseconds, and most instances solve in less than that.
 """
-import argparse, csv, os, sys
+import argparse
+import csv
+import os
+import statistics
+import sys
 
 ROWS = [("bellman", "PTVRP"), ("bellman", "PTVRP_CONT"), ("bellman", "PTVRP_CONT_FIX"),
         ("deque", "PTVRP_LINEAR"), ("deque", "PTVRP_LAYERED"), ("deque", "PTVRP_LAYERED_SAFE"),
@@ -38,10 +53,6 @@ def same(a, b):
     return abs(x - y) < 1e-6
 
 
-def folder(inst):
-    return int(inst.split("Instances ")[1][0])
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sweep-dir", default="Pure")
@@ -55,48 +66,73 @@ def main():
             sys.exit(f"missing {p}")
         data[s] = load(p)
     oracle = data[ORACLE]
+    caps = sorted({num(r["Q"]) for r in oracle.values() if num(r["Q"]) is not None})
 
     summary = [["cat", "solver", "match", "feasible", "infeasible", "match ratio",
-                "instance 1 (s)", "instance 2 (s)", "instance 3 (s)", "total (s)"]]
+                "total solve (s)", "median solve (ms)", "median repeat spread", "repeats"]]
+    by_cap = [["cat", "solver"] + [f"Q={c:g} median ms" for c in caps] + ["total solve (s)"]]
     check = [["solver", "instances", "same as original", "different", "missing",
-              "original total wall (s)", "pure total solve (s)", "pure total wall (s)"]]
+              "pure total solve (s)"]]
 
     for cat, s in ROWS:
         d = data[s]
-        t = {1: 0.0, 2: 0.0, 3: 0.0}
+        secs, spreads, reps = [], [], []
         feas = infeas = 0
+        percap = {c: [] for c in caps}
         for inst, orow in oracle.items():
             r = d[inst]
-            t[folder(inst)] += num(r["solve_seconds"]) or 0.0
+            t = num(r.get("solve_seconds"))
+            if t is not None:
+                secs.append(t)
+                q = num(r["Q"])
+                if q in percap:
+                    percap[q].append(t)
+            sp = num(r.get("solve_seconds_spread"))
+            if sp is not None:
+                spreads.append(sp)
+            rp = num(r.get("repeats"))
+            if rp is not None:
+                reps.append(rp)
             if same(orow["cost"], r["cost"]):
                 if num(r["cost"]) is None:
                     infeas += 1
                 else:
                     feas += 1
+
         if s == ORACLE:
-            own_feas = sum(1 for r in d.values() if num(r["cost"]) is not None)
-            row_match, ratio, f, i = "-", "-", own_feas, len(d) - own_feas
+            own = sum(1 for r in d.values() if num(r["cost"]) is not None)
+            match, ratio, f, i = "-", "-", own, len(d) - own
         else:
-            row_match, ratio, f, i = feas + infeas, f"{100 * (feas + infeas) / len(oracle):.2f}%", feas, infeas
-        summary.append([cat, s, row_match, f, i, ratio,
-                        f"{t[1]:.3f}", f"{t[2]:.3f}", f"{t[3]:.3f}", f"{sum(t.values()):.3f}"])
+            match = feas + infeas
+            ratio = f"{100 * match / len(oracle):.2f}%"
+            f, i = feas, infeas
+
+        summary.append([
+            cat, s, match, f, i, ratio,
+            f"{sum(secs):.3f}",
+            f"{1000 * statistics.median(secs):.4f}" if secs else "",
+            f"{statistics.median(spreads):.4f}" if spreads else "",
+            f"{int(statistics.median(reps))}" if reps else "",
+        ])
+        by_cap.append([cat, s] + [
+            f"{1000 * statistics.median(percap[c]):.4f}" if percap[c] else "" for c in caps
+        ] + [f"{sum(secs):.3f}"])
 
         orig_path = os.path.join(args.original_dir, f"sweep_{s}.csv")
         if os.path.exists(orig_path):
             orig = load(orig_path)
             eq = sum(1 for inst in d if inst in orig and same(orig[inst]["cost"], d[inst]["cost"]))
             missing = sum(1 for inst in d if inst not in orig)
-            orig_wall = sum(num(r["seconds"]) or 0.0 for r in orig.values())
-            check.append([s, len(d), eq, len(d) - eq - missing, missing, f"{orig_wall:.1f}",
-                          f"{sum(num(r['solve_seconds']) or 0.0 for r in d.values()):.3f}",
-                          f"{sum(num(r['wall_seconds']) or 0.0 for r in d.values()):.1f}"])
+            check.append([s, len(d), eq, len(d) - eq - missing, missing, f"{sum(secs):.3f}"])
 
-    for name, rows in (("summary.csv", summary), ("check_vs_original.csv", check)):
+    for name, rows in (("summary.csv", summary), ("by_capacity.csv", by_cap),
+                       ("check_vs_original.csv", check)):
         with open(os.path.join(args.sweep_dir, name), "w", newline="") as fh:
             csv.writer(fh).writerows(rows)
         print(f"== {name}")
         for r in rows:
             print(",".join(str(x) for x in r))
+        print()
 
 
 if __name__ == "__main__":
