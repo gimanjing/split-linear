@@ -224,3 +224,5 @@ diagnostics example above read `K FULL TOUR 1947 / LAYERS ALLOCATED 135 / MAX LA
 MAX LAYER ON PATH 15 / LAYER ITERATIONS 81445 (effective K 104.15)`, and the sound path-out stop
 cost 1.13x in Bellman. Every number in the current text comes from the nine `sweep_*.csv` files
 on the restored ladder.
+#   D E S - E n g i n e  
+ 
